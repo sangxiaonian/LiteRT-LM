@@ -341,9 +341,11 @@ absl::StatusOr<Responses> Decode(LlmExecutor& executor, Tokenizer& tokenizer,
     }
 
     previous_token_ids.resize(0);
-    response_texts[0] +=
-        absl::StrReplaceAll(run_one_step.GetResultTokens()[0], {{"▁", " "}});
     num_decoded_steps++;
+    if (decode_result == kPartial) {
+      response_texts[0] +=
+          absl::StrReplaceAll(run_one_step.GetResultTokens()[0], {{"▁", " "}});
+    }
 
     if (ShouldStop(decode_result == kDone, benchmark_decode_token_count,
                    num_decoded_steps, executor.GetCurrentStep().value(),
@@ -398,10 +400,12 @@ absl::Status DecodeStreaming(LlmExecutor& executor, Tokenizer& tokenizer,
     }
 
     previous_token_ids.resize(0);
-    response_texts[0] +=
-        absl::StrReplaceAll(run_one_step.GetResultTokens()[0], {{"▁", " "}});
     num_decoded_steps++;
-    observer->OnNext(responses);
+    if (decode_result == kPartial) {
+      response_texts[0] +=
+          absl::StrReplaceAll(run_one_step.GetResultTokens()[0], {{"▁", " "}});
+      observer->OnNext(responses);
+    }
 
     if (ShouldStop(decode_result == kDone, benchmark_decode_token_count,
                    num_decoded_steps, executor.GetCurrentStep().value(),
@@ -533,8 +537,10 @@ absl::Status DecodeCustomSamplingStreaming(
         scores[j] += run_one_step.GetScores()[j];
       }
     }
+    if (*decode_result == kPartial) {
+      observer->OnNext(responses);
+    }
     num_decode_steps++;
-    observer->OnNext(responses);
     if (ShouldStop(*decode_result == kDone, benchmark_decode_token_count,
                    num_decode_steps, executor.GetCurrentStep().value(),
                    max_num_tokens, observer)) {

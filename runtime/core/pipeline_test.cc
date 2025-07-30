@@ -63,6 +63,7 @@ class PipelineTest : public testing::Test {
             .string());
     ASSERT_OK(tokenizer);
     tokenizer_ = std::move(*tokenizer);
+
     // The prefill tokens are the expected tokens that will be passed in at each
     // time the Prefill function is called. The values are the token ids of the
     // input prompt "Hello World!" prepended with the bos token id (2).
@@ -111,7 +112,9 @@ TEST_F(PipelineTest, Decode) {
   auto responses =
       Decode(*executor_, *tokenizer_, stop_token_detector, benchmark_info);
   EXPECT_OK(responses);
-  EXPECT_EQ(*(responses->GetResponseTextAt(0)), " How's it going?!");
+  // The response is " How's it going?" since "!" is the stop token which is
+  // not included in the response.
+  EXPECT_EQ(*(responses->GetResponseTextAt(0)), " How's it going?");
 }
 
 TEST_F(PipelineTest, DecodeReachMaxNumTokens) {
@@ -134,7 +137,9 @@ TEST_F(PipelineTest, DecodeStreaming) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   EXPECT_OK(DecodeStreaming(*executor_, *tokenizer_, stop_token_detector,
                             benchmark_info, &observer));
-  EXPECT_EQ(observer.GetResponses()[0], " How's it going?!");
+  // The response is " How's it going?" since "!" is the stop token which is
+  // not included in the response.
+  EXPECT_EQ(observer.GetResponses()[0], " How's it going?");
 }
 
 TEST_F(PipelineTest, DecodeStreamingReachMaxNumTokens) {
@@ -171,9 +176,9 @@ TEST_F(PipelineTest, DecodeBytePairEncodingTokens) {
   EXPECT_CALL(*tokenizer, TokenIdsToText(std::vector<int>{18}))
       .WillOnce(testing::Return(" "));
   EXPECT_CALL(*tokenizer, TokenIdsToText(std::vector<int>{2295}))
-      .WillOnce(testing::Return("going"));
+      .WillOnce(testing::Return("going?"));
   EXPECT_CALL(*tokenizer, TokenIdsToText(std::vector<int>{2294}))
-      .WillOnce(testing::Return("?!"));
+      .WillOnce(testing::Return("!"));
 
   std::optional<BenchmarkInfo> benchmark_info;
   StopTokenDetector stop_token_detector(1);
@@ -181,8 +186,9 @@ TEST_F(PipelineTest, DecodeBytePairEncodingTokens) {
   auto responses =
       Decode(*executor_, *tokenizer, stop_token_detector, benchmark_info);
   EXPECT_OK(responses);
-  // The response is truncated at the max number of tokens.
-  EXPECT_EQ(*(responses->GetResponseTextAt(0)), " How's it going?!");
+  // The response is " How's it going?" since "!" is the stop token which is
+  // not included in the response.
+  EXPECT_EQ(*(responses->GetResponseTextAt(0)), " How's it going?");
 }
 
 class PipelineCustomSamplingTest : public testing::Test {

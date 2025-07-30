@@ -88,7 +88,9 @@ TEST_F(SessionBasicTest, RunDecode) {
   auto responses = (*session)->RunDecode();
   EXPECT_OK(responses);
   EXPECT_EQ(responses->GetNumOutputCandidates(), 1);
-  EXPECT_EQ(*(responses->GetResponseTextAt(0)), " How's it going?!");
+  // The response is " How's it going?" since "!" is the stop token which is
+  // not included in the response.
+  EXPECT_EQ(*(responses->GetResponseTextAt(0)), " How's it going?");
 }
 
 class TestObserver : public InferenceObservable {
