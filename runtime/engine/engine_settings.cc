@@ -37,6 +37,10 @@
 namespace litert::lm {
 namespace {
 
+// Margin for the default prefill batch size assuming the tokens to indicate the
+// start and end of the input prompt.
+constexpr int kDefaultPrefillBatchSizeMargin = 2;
+
 std::ostream& operator<<(std::ostream& os, const std::vector<int>& vec) {
   constexpr int newline_num = 10;
   os << "vector size: " << vec.size() << ": [";
@@ -137,7 +141,10 @@ absl::Status EngineSettings::MaybeUpdateAndValidate(
       advanced_settings = *main_executor_settings_.GetAdvancedSettings();
     }
     if (advanced_settings.prefill_batch_size == 0) {
-      advanced_settings.prefill_batch_size = num_prompt_tokens;
+      // If the prefill batch size is not set, set it to the number of tokens
+      // in the input prompt with some margin.
+      advanced_settings.prefill_batch_size =
+          num_prompt_tokens + kDefaultPrefillBatchSizeMargin;
       main_executor_settings_.SetAdvancedSettings(advanced_settings);
     }
   }

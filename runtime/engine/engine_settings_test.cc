@@ -468,7 +468,7 @@ TEST(SessionConfigTest,
   EXPECT_EQ(main_settings1.GetMaxNumTokens(), 4096);
   EXPECT_TRUE(main_settings1.GetAdvancedSettings().has_value());
   EXPECT_EQ(main_settings1.GetAdvancedSettings()->prefill_batch_size,
-            kNumInputPromptTokens);
+            kNumInputPromptTokens + /*margin=*/2);
 }
 
 TEST(SessionConfigTest,
@@ -489,7 +489,7 @@ TEST(SessionConfigTest,
   EXPECT_EQ(main_settings1.GetMaxNumTokens(), 8192);
   EXPECT_TRUE(main_settings1.GetAdvancedSettings().has_value());
   EXPECT_EQ(main_settings1.GetAdvancedSettings()->prefill_batch_size,
-            kNumInputPromptTokens);
+            kNumInputPromptTokens + /*margin=*/2);
 }
 
 TEST(SessionConfigTest, PrintOperator) {
