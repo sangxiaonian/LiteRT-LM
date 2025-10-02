@@ -32,6 +32,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -139,6 +140,45 @@ struct CacheUpdateSignatures {
   static constexpr absl::string_view kDecodeCacheUpdate = "decode_cache_update";
   static constexpr absl::string_view kInputPos = "input_pos";
 };
+
+absl::Status Fill(TensorBuffer& tensor_buffer, uint16_t value) {
+  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_buffer_type,
+                          tensor_buffer.TensorType());
+  LITERT_ASSIGN_OR_RETURN(
+      auto lock_and_addr,
+      ::litert::TensorBufferScopedLock::Create(
+          tensor_buffer, ::litert::TensorBuffer::LockMode::kWrite));
+  LITERT_ASSIGN_OR_RETURN(size_t num_elements,
+                          tensor_buffer_type.Layout().NumElements());
+  if (tensor_buffer_type.ElementType() == ::litert::ElementType::Float32) {
+    float* ptr = static_cast<float*>(lock_and_addr.second);
+    float float_value = static_cast<float>(value);
+    for (int i = 0; i < num_elements; ++i) {
+      ptr[i] = float_value;
+    }
+
+  } else {
+    if (tensor_buffer_type.ElementType() == ::litert::ElementType::Int16) {
+      int16_t* ptr = static_cast<int16_t*>(lock_and_addr.second);
+      int16_t int16_value = static_cast<int16_t>(value);
+      for (int i = 0; i < num_elements; ++i) {
+        ptr[i] = int16_value;
+      }
+
+    } else if (tensor_buffer_type.ElementType() ==
+               ::litert::ElementType::UInt16) {
+      uint16_t* ptr = static_cast<uint16_t*>(lock_and_addr.second);
+      for (int i = 0; i < num_elements; ++i) {
+        ptr[i] = value;
+      }
+    } else {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported tensor element type for Fill: ",
+                       tensor_buffer_type.ElementType()));
+    }
+  }
+  return absl::OkStatus();
+}
 
 // Applies greedy sampling to the decoded logits. TODO(b/416702864) this logic
 // should be replaced by the LiteRT-LM sampler once it supports greedy sampling
@@ -748,17 +788,44 @@ LlmLiteRtNpuCompiledModelExecutor::
 
 absl::Status LlmLiteRtNpuCompiledModelExecutor::WarmupInference(
     ::litert::CompiledModel& compiled_model_llm,
-    const InferenceContext& llm_inference_context,
+    InferenceContext& llm_inference_context,
     ::litert::CompiledModel& compiled_model_auxiliary,
     const InferenceContext& rope_inference_context,
     const InferenceContext& mask_inference_context,
     const InferenceContext& cache_update_inference_context) {
-  // TODO(b441454184): Add warmup for transformer model if needed, if so check
-  // data type and fill with non-zero values. For now, deliberately not warming
-  // up the transformer model because it has DIV OPs that require 'realistic'
-  // (non-zero) inputs.
+  // We need to fill the embedding input buffers with non-zero values because
+  // some of the Gemma3 models contain embedding lookup preprocessing that
+  // quantize a float embedding tensor into a quantized embedding tensor and use
+  // 'DIV' operations in the process. Without this we risk running into: ERROR:
+  // third_party/tensorflow/lite/kernels/div.cc:242 data[i] != 0 was not true.
+  // ERROR: Node number 21 (DIV) failed to invoke.
 
-  auto result = compiled_model_auxiliary.Run(
+  if (llm_inference_context.decode_input_buffers.contains(
+          LlmSignatures::kInputEmbeddings)) {
+    RETURN_IF_ERROR(
+        Fill(llm_inference_context
+                 .decode_input_buffers[LlmSignatures::kInputEmbeddings],
+             1));
+  }
+  if (llm_inference_context.prefill_input_buffers.contains(
+          LlmSignatures::kInputEmbeddings)) {
+    RETURN_IF_ERROR(
+        Fill(llm_inference_context
+                 .prefill_input_buffers[LlmSignatures::kInputEmbeddings],
+             1));
+  }
+  auto result = compiled_model_llm.Run(
+      LlmSignatures::kPrefillLlm, llm_inference_context.prefill_input_buffers,
+      llm_inference_context.prefill_output_buffers);
+  RET_CHECK(result) << "Inference warmup run for Gemma3 (prefill) failed."
+                    << result.Error().Message();
+  result = compiled_model_llm.Run(LlmSignatures::kDecodeLlm,
+                                  llm_inference_context.decode_input_buffers,
+                                  llm_inference_context.decode_output_buffers);
+  RET_CHECK(result) << "Inference warmup run for Gemma3 (decode) failed."
+                    << result.Error().Message();
+
+  result = compiled_model_auxiliary.Run(
       RopeSignatures::kPrefillRope,
       rope_inference_context.prefill_input_buffers,
       rope_inference_context.prefill_output_buffers);

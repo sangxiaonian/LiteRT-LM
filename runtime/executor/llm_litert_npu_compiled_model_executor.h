@@ -318,7 +318,7 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   // intended to be called before the first actual inference.
   static absl::Status WarmupInference(
       ::litert::CompiledModel& compiled_model_llm,
-      const InferenceContext& llm_inference_context,
+      InferenceContext& llm_inference_context,
       ::litert::CompiledModel& compiled_model_auxiliary,
       const InferenceContext& rope_inference_context,
       const InferenceContext& mask_inference_context,
