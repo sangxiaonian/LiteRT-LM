@@ -260,8 +260,6 @@ class MockTokenizer : public Tokenizer {
               (const std::vector<int>& token_ids), (override));
   MOCK_METHOD(absl::StatusOr<std::vector<int>>, TextToTokenIds,
               (absl::string_view text), (override));
-  MOCK_METHOD(absl::StatusOr<int>, BosId, (), (const, override));
-  MOCK_METHOD(absl::StatusOr<int>, EosId, (), (const, override));
 };
 
 absl::Status IsExpectedLlmMetadata(const proto::LlmMetadata& llm_metadata) {
@@ -307,8 +305,6 @@ TEST(EngineSettingsTest, MaybeUpdateAndValidate) {
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -325,8 +321,6 @@ TEST(EngineSettingsTest, MaybeUpdateAndValidateNPU) {
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -419,8 +413,6 @@ TEST(SessionConfigTest, MaybeUpdateAndValidate) {
               testing::status::StatusIs(absl::StatusCode::kInvalidArgument));
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -447,8 +439,6 @@ TEST(SessionConfigTest, MaybeUpdateAndValidatePickGpuAsSamplerBackend) {
               testing::status::StatusIs(absl::StatusCode::kInvalidArgument));
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -469,8 +459,6 @@ TEST(SessionConfigTest, MaybeUpdateAndValidateMaxNumTokens) {
   EXPECT_EQ(settings->GetMainExecutorSettings().GetMaxNumTokens(), 0);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -496,8 +484,6 @@ TEST(SessionConfigTest,
   EXPECT_EQ(settings->GetMainExecutorSettings().GetMaxNumTokens(), 0);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>(kNumInputPromptTokens, 1)));
@@ -524,8 +510,6 @@ TEST(SessionConfigTest,
   EXPECT_EQ(settings->GetMainExecutorSettings().GetMaxNumTokens(), 0);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>(kNumInputPromptTokens, 1)));
@@ -553,8 +537,6 @@ TEST(SessionConfigTest, MaybeUpdateAndValidateLlmGemma3N) {
               testing::status::StatusIs(absl::StatusCode::kInvalidArgument));
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TextToTokenIds("<eos>"))
       .WillRepeatedly(Return(std::vector<int>({1})));
   EXPECT_CALL(tokenizer, TextToTokenIds("<ctrl>"))
@@ -587,8 +569,6 @@ TEST(SessionConfigTest, MaybeUpdateAndValidateLlmGemma3) {
               testing::status::StatusIs(absl::StatusCode::kInvalidArgument));
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TextToTokenIds("<eos>"))
       .WillRepeatedly(Return(std::vector<int>({1})));
   EXPECT_CALL(tokenizer, TextToTokenIds("<ctrl>"))
@@ -621,8 +601,6 @@ TEST(SessionConfigTest, MaybeUpdateAndValidateJinjaPromptTemplate) {
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -686,8 +664,6 @@ TEST(SessionConfigTest,
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -710,8 +686,6 @@ TEST(SessionConfigTest,
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -737,8 +711,6 @@ TEST(SessionConfigTest,
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));
@@ -762,8 +734,6 @@ TEST(SessionConfigTest,
   EXPECT_OK(settings);
 
   MockTokenizer tokenizer;
-  EXPECT_CALL(tokenizer, BosId()).WillRepeatedly(Return(2));
-  EXPECT_CALL(tokenizer, EosId()).WillRepeatedly(Return(1));
   EXPECT_CALL(tokenizer, TokenIdsToText).WillRepeatedly(Return("fake_text"));
   EXPECT_CALL(tokenizer, TextToTokenIds)
       .WillRepeatedly(Return(std::vector<int>{1}));

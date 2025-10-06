@@ -39,8 +39,6 @@ class MockTokenizer : public Tokenizer {
               (const std::vector<int>& token_ids), (override));
   MOCK_METHOD(absl::StatusOr<std::vector<int>>, TextToTokenIds,
               (absl::string_view text), (override));
-  MOCK_METHOD(absl::StatusOr<int>, BosId, (), (const, override));
-  MOCK_METHOD(absl::StatusOr<int>, EosId, (), (const, override));
 };
 
 TEST(ModelTypeUtilsTest, InferLlmModelTypeGemma3N) {

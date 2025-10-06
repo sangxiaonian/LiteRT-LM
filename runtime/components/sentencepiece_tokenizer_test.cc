@@ -124,25 +124,5 @@ TEST(SentencePieceTokenizerTest, TokenIdsToText) {
   EXPECT_EQ(text_or.value(), "▁Hello▁World!");
 }
 
-TEST(SentencePieceTokenizerTest, BosId) {
-  auto tokenizer_or =
-      SentencePieceTokenizer::CreateFromFile(GetSentencePieceModelPath());
-  EXPECT_TRUE(tokenizer_or.ok());
-  auto tokenizer = std::move(tokenizer_or.value());
-  auto bos_id_or = tokenizer->BosId();
-  EXPECT_TRUE(bos_id_or.ok());
-  EXPECT_EQ(bos_id_or.value(), 1);
-}
-
-TEST(SentencePieceTokenizerTest, EosId) {
-  auto tokenizer_or =
-      SentencePieceTokenizer::CreateFromFile(GetSentencePieceModelPath());
-  EXPECT_TRUE(tokenizer_or.ok());
-  auto tokenizer = std::move(tokenizer_or.value());
-  auto eos_id_or = tokenizer->EosId();
-  EXPECT_TRUE(eos_id_or.ok());
-  EXPECT_EQ(eos_id_or.value(), 2);
-}
-
 }  // namespace
 }  // namespace litert::lm

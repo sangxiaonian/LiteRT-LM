@@ -128,17 +128,5 @@ TEST(TokenizerTest, MergeTokenIds) {
   EXPECT_EQ((*merged)[1], std::vector<int>({224, 24, 8, 66, 246, 18, 2295}));
 }
 
-TEST(SentencePieceTokenizerTest, BosId) {
-  auto tokenizer = std::make_unique<MockTokenizer>();
-  EXPECT_EQ(tokenizer->BosId().status().code(),
-            absl::StatusCode::kUnimplemented);
-}
-
-TEST(SentencePieceTokenizerTest, EosId) {
-  auto tokenizer = std::make_unique<MockTokenizer>();
-  EXPECT_EQ(tokenizer->EosId().status().code(),
-            absl::StatusCode::kUnimplemented);
-}
-
 }  // namespace
 }  // namespace litert::lm
