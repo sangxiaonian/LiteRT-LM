@@ -94,7 +94,7 @@ class TestCallbacks : public InferenceCallbacks {
   std::vector<std::string>& responses_;
   absl::Status& status_;
   bool& done_;
-  bool delay_on_next_;
+  bool delay_on_next_ = false;
 };
 
 class PipelineTest : public testing::Test {
