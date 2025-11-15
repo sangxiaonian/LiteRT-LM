@@ -27,13 +27,13 @@ suspend fun main(args: Array<String>) {
     requireNotNull(args.getOrNull(0)) { "Model path must be provided as the first argument." }
 
   Engine.setNativeMinLogServerity(LogSeverity.ERROR) // silence noisy log for the TUI.
-  val engine = Engine(EngineConfig(modelPath = modelPath, backend = Backend.CPU))
-  engine.initialize()
 
-  engine.use { engine ->
+  val engineConfig = EngineConfig(modelPath = modelPath, backend = Backend.CPU)
+  Engine(engineConfig).use { engine ->
+    engine.initialize()
+
     val conversationConfig =
       ConversationConfig(systemMessage = Message.of("You are a helpful assistant."))
-
     engine.createConversation(conversationConfig).use { conversation ->
       while (true) {
         print("\n>>> ")

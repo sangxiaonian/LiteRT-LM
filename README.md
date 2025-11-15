@@ -28,7 +28,8 @@ stack, and more flexibility. LiteRT-LM can help with all three.
     - Simple CLI for Desktop: [Link to Quick Start section](#quick_start)
     - Multi-Modality support: Vision and Audio input are supported when models
       support it. [See more details here](#multimodal)
-    - Kotlin support: [Link to LiteRT-LM Android API](./android/README.md)
+    - Kotlin API for Android and JVM (Linux, MacOS, Windows): [Link to LiteRT-LM
+      Kotlin API](./kotlin/README.md)
     - Conversation API: [Link to Conversation API](./docs/conversation.md)
     - Function calling support: [Link to Tool Use](./docs/tool_use.md)
 

@@ -1,60 +1,72 @@
-# LiteRT-LM Android API
+# LiteRT-LM Kotlin API
 
-This document provides an overview and usage examples for the LiteRT-LM Android
-API, focusing on the Conversation API.
+The Kotlin API of LiteRT-LM for **Android** and **JVM (Linux, MacOS, Windows)**
+with features like **GPU acceleration** (NPU upcoming!), **multi-modality**, and
+**tools use**.
 
-## Overview
+## Introduction
 
-The LiteRT-LM Android API allows developers to integrate large language model
-capabilities into their Android applications. The API is designed to be flexible
-and efficient, supporting various use cases from simple text generation,
-multi-modality (audio and vision), and complex conversational interactions with
-tool use.
+Here is a sample terminal chat app built with the Kotlin API:
 
-The core components of the Conversation API include:
+```kotlin
+import com.google.ai.edge.litertlm.*
 
--   **`Engine`**: Manages the lifecycle of a LiteRT-LM model. It handles loading
-    the model and creating conversations.
--   **`EngineConfig`**: Configuration for the `Engine`, including the model
-    path, backend (CPU/GPU), and other settings.
--   **`Conversation`**: Represents a conversational session with the model. It
-    maintains the state of the conversation and handles message exchanges.
--   **`ConversationConfig`**: Configuration for a `Conversation`, including
-    system messages, tools, and sampling parameters.
--   **`Message`**: Represents a single message within a conversation, which can
-    contain various types of content.
--   **`Content`**: Sealed class representing different types of content within a
-    `Message` (e.g., Text, Image, Audio).
--   **`MessageCallback`**: An interface for handling streaming responses from
-    the model asynchronously.
--   **`@Tool` / `@ToolParam`**: Annotations used to define custom functions as
-    tools that the model can invoke.
--   **`ToolManager`**: Manages the registration and execution of tools.
+suspend fun main() {
+  Engine.setNativeMinLogSeverity(LogSeverity.ERROR) // hide log for TUI app
 
-## Getting Started
+  val engineConfig = EngineConfig(modelPath = "/path/to/model.litertlm")
+  Engine(engineConfig).use { engine ->
+    engine.initialize()
+
+    engine.createConversation().use { conversation ->
+      while (true) {
+        print("\n>>> ")
+        conversation.sendMessageAsync(Message.of(readln())).collect { print(it) }
+      }
+    }
+  }
+}
+```
+
+![](./kotlin_demo.gif)
+
+To try out the above sample, clone the repo and run with
+[example/Main.kt](./java/com/google/ai/edge/litertlm/example/Main.kt):
+
+```bazel
+bazel run -c opt //kotlin/java/com/google/ai/edge/litertlm/example:main -- <abs_model_path>
+```
+
+Available `.litertlm` models are on the [HuggingFace LiteRT
+Community](https://huggingface.co/litert-community). The above animation was
+using the [Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT).
+
+For Android sample, check out the [Google AI Edge
+Gallery](https://github.com/google-ai-edge/gallery) app.
+
+## Getting Started with Gradle
+
+While LiteRT-LM is developed with Bazel, we provide the Maven packages for
+Gradle/Maven users.
 
 ### 1. Add the Gradle dependency
 
 ```
 dependencies {
-    implementation("com.google.ai.edge.litertlm:litertlm:LATEST_VERSION")
+    // For Android
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
+
+    // For JVM (Linux, MacOS, Windows)
+    implementation("com.google.ai.edge.litertlm:litertlm-jvm:latest.release")
 }
 ```
 
-Replace `LATEST_VERSION` with the actual version you intend to use. The
-LiteRT-LM Android API package can be found on [Google
-Maven](https://maven.google.com/web/index.html#com.google.ai.edge.litertlm:litertlm).
+You can find the available versions on Google Maven in
+[litertlm-android](https://maven.google.com/web/index.html#com.google.ai.edge.litertlm:litertlm-android)
+and
+[litertlm-jvm](https://maven.google.com/web/index.html#com.google.ai.edge.litertlm:litertlm-jvm).
 
-The GPU backend uses some native system libraries. The app need to request
-explicitly by adding the following to your `AndroidManifest.xml` inside the
-`<application>` tag:
-
-```xml
-  <application>
-    <uses-native-library android:name="libvndksupport.so" android:required="false"/>
-    <uses-native-library android:name="libOpenCL.so" android:required="false"/>
-  </application>
-```
+`latest.release` could be used to get the latest release.
 
 ### 2. Initialize the Engine
 
@@ -70,7 +82,6 @@ import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 
-// Assuming 'context' is your Application Context
 val engineConfig = EngineConfig(
     modelPath = "/path/to/your/model.litertlm", // Replace with your model path
     backend = Backend.CPU, // Or Backend.GPU
@@ -84,6 +95,17 @@ engine.initialize()
 
 // Close the engine when done
 engine.close()
+```
+
+On Android, to use the GPU backend, the app needs to request explicitly by
+adding the following to your `AndroidManifest.xml` inside the `<application>`
+tag:
+
+```xml
+  <application>
+    <uses-native-library android:name="libvndksupport.so" android:required="false"/>
+    <uses-native-library android:name="libOpenCL.so" android:required="false"/>
+  </application>
 ```
 
 ### 3. Create a Conversation
@@ -130,8 +152,7 @@ There are three ways to send messages:
     request/response interactions.
 -   **`sendMessageAsync(message: Message, callback: MessageCallback)`**:
     Asynchronous call for streaming responses. This is better for long-running
-    requests or when you want to display the response as it's being
-    generated.
+    requests or when you want to display the response as it's being generated.
 -   **`sendMessageAsync(message: Message): Flow<Message>`**: Asynchronous call
     that returns a Kotlin Flow for streaming responses. This is the recommended
     approach for Coroutine users.
@@ -195,21 +216,32 @@ conversation.sendMessageAsync(userMessage)
 
 ### 5. Multi-Modality
 
+Note: this only works with models with multi-modality support. e.g., the
+[Gemma3n](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm).
+
 `Message` objects can contain different types of `Content`, including `Text`,
 `ImageBytes`, `ImageFile`, and `AudioBytes`, `AudioFile`.
 
 ```kotlin
-val audioBytes: ByteArray = // Load audio bytes
+// Initialize the `visionBackend` and/or the `audioBackend`
+val engineConfig = EngineConfig(
+    modelPath = "/path/to/your/model.litertlm", // Replace with your model path
+    backend = Backend.CPU, // Or Backend.GPU
+    visionBackend = Backend.GPU,
+    audioBackend = Backend.CPU,
+)
 
 // See the Content class for other variants.
 val multiModalMessage = Message.of(
     Content.ImageFile("/path/to/image"),
-    Content.AudioBytes(audioBytes),
+    Content.AudioBytes(audioBytes), // ByteArray of the audio
     Content.Text("Describe this image and audio."),
 )
 ```
 
 ### 6. Defining and Using Tools
+
+Note: this only works with models with tool support.
 
 You can define custom Kotlin functions as tools that the model can call to
 perform actions or fetch information.
@@ -253,7 +285,7 @@ functionality, parameters (including their types and descriptions from
 The types for parameters annotated with `@ToolParam` can be `String`, `Int`,
 `Boolean`, `Float`, `Double`, or a `List` of these types (e.g., `List<String>`).
 Use nullable types (e.g., `String?`) to indicate nullable parameters. Set a
-default value to indicate that the parameters is optional, and mention the
+default value to indicate that the parameter is optional, and mention the
 default value in the description in `@ToolParam`.
 
 ##### Return Type
@@ -261,13 +293,14 @@ default value in the description in `@ToolParam`.
 The return type of your tool function can be any Kotlin type. The result will be
 converted to a JSON element before being sent back to the model.
 
--   `List` types are converted to json array.
--   `Map` types are converted to json object.
--   Primitive types (`String`, `Number`, `Boolean`) are converted to the corresponding json primitive.
+-   `List` types are converted to JSON array.
+-   `Map` types are converted to JSON object.
+-   Primitive types (`String`, `Number`, `Boolean`) are converted to the
+    corresponding JSON primitive.
 -   Other types are converted to string with the `toString()` method.
 
 For structured data, returning `Map` or a data class that will be converted to a
-json object is recommended.
+JSON object is recommended.
 
 #### Registering Tools
 
@@ -280,7 +313,6 @@ val conversation = engine.createConversation(
         // ... other configs
     )
 )
-
 
 // Send messages that might trigger the tool
 val userMessage = Message.of("What's the weather like in London?")
