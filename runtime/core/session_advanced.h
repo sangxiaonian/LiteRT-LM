@@ -66,7 +66,11 @@ class SessionAdvanced : public Engine::Session {
       Tokenizer* absl_nonnull tokenizer, const SessionConfig& session_config,
       std::optional<BenchmarkInfo> benchmark_info);
 
-  ~SessionAdvanced() override = default;
+  // TODO b/409401231 - Call execution manager's release session instead.
+  ~SessionAdvanced() override {
+    CancelProcess();
+    execution_manager_.WaitUntilAllDone(Engine::kDefaultTimeout).IgnoreError();
+  };
 
   absl::StatusOr<Responses> GenerateContent(
       const std::vector<InputData>& contents) override {
