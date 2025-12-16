@@ -1166,6 +1166,8 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
           gpu_compilation_options.AddExternalTensorPattern("logits");
         }
       }
+      // Prefill and decode are always fully delegated to single delegate.
+      gpu_compilation_options.SetHintFullyDelegatedToSingleDelegate(true);
       auto advanced_settings = executor_settings.GetAdvancedSettings();
       int num_threads_to_upload = kDefaultNumThreadsToUpload;
       int num_threads_to_compile = kDefaultNumThreadsToCompile;
