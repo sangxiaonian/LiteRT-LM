@@ -237,11 +237,6 @@ class LlmLiteRtCompiledModelExecutorBase : public LlmExecutor {
   // The signatures of the model.
   ModelSignatures signatures_;
 
-  // The sampled ids to use for external sampling.
-  // The layout is batch-major.
-  // e.g. for output_batch_size=2, the layout is:
-  // {batch_0_seq_0, batch_1_seq_0, batch_0_seq_1, batch_1_seq_1, ...}
-  std::vector<int> sampled_ids_;
   // Output batch size for the sampled ids.
   const int output_batch_size_;
   // Whether decode has been run ever after prefill.
