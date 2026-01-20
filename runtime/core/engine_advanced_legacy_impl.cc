@@ -38,6 +38,7 @@
 #include "runtime/components/tokenizer.h"
 #include "runtime/core/session_factory.h"
 #include "runtime/engine/engine.h"
+#include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/audio_executor_settings.h"
@@ -117,10 +118,9 @@ absl::StatusOr<std::unique_ptr<LlmExecutor>> BuildExecutor(
           "Failed to build GPU_ARTISAN executor: "
           "model_resources.litert_lm_model_resources is null. ");
     }
-    ASSIGN_OR_RETURN(executor,
-                     oi::LlmGpuArtisanExecutor::Create(
-                         engine_settings.GetMainExecutorSettings(),
-                         *model_resources.litert_lm_model_resources));
+    ASSIGN_OR_RETURN(executor, oi::LlmGpuArtisanExecutor::Create(
+                                   engine_settings.GetMainExecutorSettings(),
+                                   *model_resources.litert_lm_model_resources));
   } else {
     return absl::InvalidArgumentError(
         absl::StrCat("Unsupported backend: ",
@@ -162,8 +162,7 @@ EngineAdvancedLegacyImpl::EngineAdvancedLegacyImpl(
 
 // Method to create the Session.
 absl::StatusOr<std::unique_ptr<Engine::Session>>
-EngineAdvancedLegacyImpl::CreateSession(
-    const SessionConfig& session_config) {
+EngineAdvancedLegacyImpl::CreateSession(const SessionConfig& session_config) {
   auto config = session_config;
   RETURN_IF_ERROR(config.MaybeUpdateAndValidate(engine_settings_));
   return InitializeSessionAdvanced(execution_manager_, tokenizer_, config,
@@ -238,8 +237,8 @@ absl::StatusOr<std::unique_ptr<Engine>> CreateEngineAdvancedLegacy(
   }
   // Update and load the parameters from the model file and convert the tokens
   // to ids.
-  RETURN_IF_ERROR(engine_settings.MaybeUpdateAndValidate(
-      *tokenizer, &llm_metadata));
+  RETURN_IF_ERROR(
+      engine_settings.MaybeUpdateAndValidate(*tokenizer, &llm_metadata));
 
   ASSIGN_OR_RETURN(auto executor,
                    BuildExecutor(*model_resources, engine_settings));
@@ -301,5 +300,12 @@ absl::StatusOr<std::unique_ptr<Engine>> CreateEngineAdvancedLegacy(
       std::move(task_tokenizer), std::move(benchmark_info)));
   return llm_impl;
 };
+
+LITERT_LM_REGISTER_ENGINE(EngineFactory::EngineType::kAdvancedLegacyTfLite,
+                          [](EngineSettings settings,
+                             absl::string_view input_prompt_as_hint) {
+                            return Engine::CreateEngine(std::move(settings),
+                                                        input_prompt_as_hint);
+                          });
 
 }  // namespace litert::lm

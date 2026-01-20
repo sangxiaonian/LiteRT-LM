@@ -34,6 +34,7 @@
 #include "runtime/components/model_resources.h"
 #include "runtime/core/session_factory.h"
 #include "runtime/engine/engine.h"
+#include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/executor/audio_executor.h"
@@ -304,5 +305,12 @@ absl::StatusOr<std::unique_ptr<Engine>> Engine::CreateEngine(
 
   return llm_impl;
 };
+
+LITERT_LM_REGISTER_ENGINE(EngineFactory::EngineType::kLiteRTCompiledModel,
+                          [](EngineSettings settings,
+                             absl::string_view input_prompt_as_hint) {
+                            return Engine::CreateEngine(std::move(settings),
+                                                        input_prompt_as_hint);
+                          });
 
 }  // namespace litert::lm

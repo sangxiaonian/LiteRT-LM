@@ -41,6 +41,22 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "engine_factory",
+    hdrs = ["engine_factory.h"],
+    deps = [
+        ":engine_interface",
+        ":engine_settings",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # The selected engine implementations based on the build flags.
 cc_library(
     name = "engine_impl_selected",
