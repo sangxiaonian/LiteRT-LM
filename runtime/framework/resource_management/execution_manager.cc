@@ -792,7 +792,7 @@ absl::Status ExecutionManager::AddCloneSessionTask(
     callback = [](absl::StatusOr<Responses> responses) {};
   }
 
-  auto task = [this, task_id, cloned_session_id]() mutable -> void {
+  auto task = [this, task_id, session_id, cloned_session_id]() mutable -> void {
     auto task_info = StartTask(task_id);
     if (!task_info.ok()) {
       FinishTaskAndLogErrors(task_id, task_info.status(),
@@ -810,34 +810,41 @@ absl::Status ExecutionManager::AddCloneSessionTask(
 
     absl::StatusOr<Responses> result = Responses(TaskState::kDone);
     [&] {
-      absl::MutexLock lock(session_and_task_lookup_mutex_);
-      if (!session_lookup_.contains(cloned_session_id)) {
-        result = absl::InvalidArgumentError(
-            absl::StrCat("Cloned session ", cloned_session_id,
-                         " not found in session list."));
+      std::shared_ptr<const SessionInfo> original_session_info;
+      {
+        absl::MutexLock lock(session_and_task_lookup_mutex_);
+        if (!session_lookup_.contains(session_id)) {
+          result = absl::InvalidArgumentError(
+              absl::StrCat("Session ", session_id,
+                           " not found in session list."));
+          return;
+        }
+        original_session_info = session_lookup_.at(session_id);
+      }
+
+      auto cloned_context_handler_or = resource_manager_->CloneContextHandler(
+          original_session_info->context_handler);
+      if (!cloned_context_handler_or.ok()) {
+        result = cloned_context_handler_or.status();
         return;
       }
-      auto cloned_context_handler =
-          resource_manager_->CloneContextHandler(session_info->context_handler);
-      if (!cloned_context_handler.ok()) {
-        result = cloned_context_handler.status();
-        return;
-      }
+
       std::unique_ptr<Sampler> cloned_sampler;
-      if (session_info->sampler != nullptr) {
-        auto sampler =
-            CreateSampler(session_info->session_config.GetSamplerBackend(),
-                          session_info->session_config.GetNumOutputCandidates(),
-                          session_info->session_config.GetSamplerParams());
+      if (original_session_info->sampler != nullptr) {
+        auto sampler = CreateSampler(
+            original_session_info->session_config.GetSamplerBackend(),
+            original_session_info->session_config.GetNumOutputCandidates(),
+            original_session_info->session_config.GetSamplerParams());
         if (!sampler.ok()) {
           result = sampler.status();
           return;
         }
         cloned_sampler = std::move(*sampler);
       }
+
       auto cloned_stop_token_detector = std::make_unique<StopTokenDetector>(1);
       for (const auto& stop_token_sequence :
-           session_info->session_config.GetStopTokenIds()) {
+           original_session_info->session_config.GetStopTokenIds()) {
         auto status = cloned_stop_token_detector->AddStopTokenSequence(
             stop_token_sequence);
         if (!status.ok()) {
@@ -845,18 +852,28 @@ absl::Status ExecutionManager::AddCloneSessionTask(
           return;
         }
       }
-      session_lookup_.at(cloned_session_id)->session_config =
-          session_info->session_config;
-      session_lookup_.at(cloned_session_id)->context_handler =
-          std::move(cloned_context_handler.value());
-      session_lookup_.at(cloned_session_id)->sampler =
-          std::move(cloned_sampler);
-      session_lookup_.at(cloned_session_id)->last_prefill_token_id =
-          session_info->last_prefill_token_id;
-      session_lookup_.at(cloned_session_id)->stop_token_detector =
-          std::move(cloned_stop_token_detector);
-      session_lookup_.at(cloned_session_id)->benchmark_info =
-          session_info->benchmark_info;
+
+      {
+        absl::MutexLock lock(session_and_task_lookup_mutex_);
+        if (!session_lookup_.contains(cloned_session_id)) {
+          result = absl::InvalidArgumentError(
+              absl::StrCat("Cloned session ", cloned_session_id,
+                           " not found in session list."));
+          return;
+        }
+        session_lookup_.at(cloned_session_id)->session_config =
+            original_session_info->session_config;
+        session_lookup_.at(cloned_session_id)->context_handler =
+            std::move(cloned_context_handler_or.value());
+        session_lookup_.at(cloned_session_id)->sampler =
+            std::move(cloned_sampler);
+        session_lookup_.at(cloned_session_id)->last_prefill_token_id =
+            original_session_info->last_prefill_token_id;
+        session_lookup_.at(cloned_session_id)->stop_token_detector =
+            std::move(cloned_stop_token_detector);
+        session_lookup_.at(cloned_session_id)->benchmark_info =
+            original_session_info->benchmark_info;
+      }
     }();
 
     if (cancelled != nullptr && cancelled->load()) {
