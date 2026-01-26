@@ -1355,8 +1355,10 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
   if (executor_settings.GetActivationDataType().has_value()) {
     activation_data_type = executor_settings.GetActivationDataType().value();
   }
+  auto logits_data_type = activation_data_type;
   const Backend backend = executor_settings.GetBackend();
-  bool use_fp16_precision = true;
+  bool use_fp16_precision =
+      (activation_data_type != ActivationDataType::FLOAT32);
   bool gpu_optimized_single_buffer_cache = false;
 
   if (!litert_model || !*litert_model) {
@@ -1599,7 +1601,8 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     if (clear_kv_cache_before_prefill) {
       LITERT_RETURN_IF_ERROR(input_buffer.Clear());
     }
-    if (backend == Backend::CPU) {
+    if (backend == Backend::CPU
+    ) {
       LITERT_ASSIGN_OR_RETURN(auto output_buffer, input_buffer.Duplicate());
       output_kv_cache_buffers[input_name] = std::move(output_buffer);
     }
@@ -1614,8 +1617,8 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       if (backend == Backend::GPU) {
         output_kv_cache_buffers[output_name] = std::move(output_buffer);
       }
-      // For CPU, we will use single buffer for kv cache input and output to
-      // improve performance and memory usage.
+      // For CPU and Google Tensor, we will use single buffer for kv cache input
+      // and output to improve performance and memory usage.
     } else {
       // TODO b/444063139 - Support non-kv_cache tensors as prefill outputs.
       // This should be done once we have a model that has non-kv_cache tensors
@@ -1651,11 +1654,31 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto output_logits_buffer,
-      decode_output_buffers[signatures.output_logits].Duplicate());
-  LITERT_ASSIGN_OR_RETURN(auto output_logits_buffer_tensor_type,
-                          output_logits_buffer.TensorType());
+  auto it = decode_output_buffers.find(signatures.output_logits);
+  if (it == decode_output_buffers.end()) {
+    std::vector<std::string> available_keys;
+    for (const auto& [key, _] : decode_output_buffers) {
+      available_keys.push_back(std::string(key));
+    }
+    return absl::NotFoundError(absl::StrCat(
+        "Output logits buffer not found: ", signatures.output_logits,
+        ". Available: ", absl::StrJoin(available_keys, ", ")));
+  }
+  auto output_logits_buffer_expected = it->second.Duplicate();
+  if (!output_logits_buffer_expected.HasValue()) {
+    return absl::InternalError(absl::StrCat(
+        "Failed to duplicate output logits buffer: ", signatures.output_logits,
+        ". Error: ", output_logits_buffer_expected.Error()));
+  }
+  auto output_logits_buffer = std::move(output_logits_buffer_expected.Value());
+  auto output_logits_buffer_tensor_type_expected = output_logits_buffer.TensorType();
+  if (!output_logits_buffer_tensor_type_expected.HasValue()) {
+    return absl::InternalError(absl::StrCat(
+        "Failed to get TensorType for output logits buffer: ",
+        signatures.output_logits,
+        ". Error: ", output_logits_buffer_tensor_type_expected.Error()));
+  }
+  auto output_logits_buffer_tensor_type = output_logits_buffer_tensor_type_expected.Value();
   RET_CHECK(output_logits_buffer_tensor_type.Layout().Dimensions().size() == 3)
       << "Output logits must be (batch, seq, vocab)";
   int batch_size = output_logits_buffer_tensor_type.Layout().Dimensions()[0];
@@ -1714,7 +1737,7 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       std::move(decode_output_kv_cache_buffers), std::move(prefill_runner_set),
       signatures, batch_size, std::move(cache_path),
       std::move(embedding_lookup), std::move(per_layer_embedding_lookup),
-      use_fp16_precision, activation_data_type));
+      use_fp16_precision, logits_data_type));
 }
 
 /* ===========================================================================*/
@@ -2011,6 +2034,16 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
       int v_dynamic_dim,
       GetDynamicDimIndex(*litert_model, "prefill", value_cache_input_names[0]));
 
+  auto it = decode_output_buffers.find(signatures.output_logits);
+  if (it == decode_output_buffers.end()) {
+    std::vector<std::string> available_keys;
+    for (const auto& [key, _] : decode_output_buffers) {
+      available_keys.push_back(std::string(key));
+    }
+    return absl::NotFoundError(absl::StrCat(
+        "Output logits buffer not found: ", signatures.output_logits,
+        ". Available: ", absl::StrJoin(available_keys, ", ")));
+  }
   LITERT_ASSIGN_OR_RETURN(
       auto output_logits_buffer,
       decode_output_buffers[signatures.output_logits].Duplicate());

@@ -163,13 +163,15 @@ Gemma3DataProcessor::Create(Gemma3DataProcessorConfig config,
 
 absl::StatusOr<ordered_json> Gemma3DataProcessor::MessageToTemplateInput(
     const ordered_json& message) const {
+  ordered_json template_input = message;
+
   // If the message doesn't contain any tool calls and isn't a tool message,
   // then the template input is the same as the message.
-  if (!HasToolCalls(message) && !IsToolMessage(message)) {
-    return message;
+  if (!HasToolCalls(template_input) && !IsToolMessage(template_input)) {
+    return template_input;
   }
 
-  ordered_json template_input = ordered_json::object();
+  template_input = ordered_json::object();
   if (message.contains("role")) {
     template_input["role"] = message["role"];
   }

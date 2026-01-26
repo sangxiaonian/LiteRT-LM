@@ -69,13 +69,13 @@ TEST(VisionExecutorSettingsTest, CreateDefaultWithInvalidBackend) {
                                             /*encoder_backend=*/Backend::CPU,
                                             /*adapter_backend=*/Backend::NPU),
       StatusIs(absl::StatusCode::kInvalidArgument,
-               "Unsupported adapter backend: 6"));
+               "Unsupported adapter backend: 7"));
   EXPECT_THAT(
       VisionExecutorSettings::CreateDefault(model_assets,
                                             /*encoder_backend=*/Backend::GPU,
                                             /*adapter_backend=*/Backend::NPU),
       StatusIs(absl::StatusCode::kInvalidArgument,
-               "Unsupported adapter backend: 6"));
+               "Unsupported adapter backend: 7"));
   EXPECT_THAT(VisionExecutorSettings::CreateDefault(
                   model_assets, /*encoder_backend=*/Backend::GPU_ARTISAN,
                   /*adapter_backend=*/Backend::GPU),

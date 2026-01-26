@@ -169,8 +169,6 @@ CreateLlmLiteRtCompiledModelExecutor(LlmExecutorSettings executor_settings,
   switch (backend) {
     case Backend::CPU:
     case Backend::GPU:
-      return CreateCpuOrGpuLlmLiteRtCompiledModelExecutor(executor_settings,
-                                                          lrt_env, resources);
     case Backend::NPU:
       return CreateNpuLlmLiteRtCompiledModelExecutor(executor_settings, lrt_env,
                                                      resources);
