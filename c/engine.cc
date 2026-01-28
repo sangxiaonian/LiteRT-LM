@@ -97,6 +97,7 @@ using ::litert::lm::EngineFactory;
 using ::litert::lm::EngineSettings;
 using ::litert::lm::InputText;
 using ::litert::lm::JsonMessage;
+using ::litert::lm::EngineFactory;
 using ::litert::lm::Message;
 using ::litert::lm::ModelAssets;
 using ::litert::lm::Responses;
@@ -331,7 +332,10 @@ LiteRtLmEngine* litert_lm_engine_create(
     return nullptr;
   }
 
-  auto engine = EngineFactory::CreateAny(*settings->settings);
+  absl::StatusOr<std::unique_ptr<Engine>> engine;
+    engine = EngineFactory::CreateDefault(*settings->settings);
+
+
   if (!engine.ok()) {
     ABSL_LOG(ERROR) << "Failed to create engine: " << engine.status();
     return nullptr;
@@ -341,6 +345,7 @@ LiteRtLmEngine* litert_lm_engine_create(
   c_engine->engine = *std::move(engine);
   return c_engine;
 }
+
 void litert_lm_engine_delete(LiteRtLmEngine* engine) { delete engine; }
 
 LiteRtLmSession* litert_lm_engine_create_session(

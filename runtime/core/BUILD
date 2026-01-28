@@ -35,6 +35,8 @@ package_group(
         "//third_party/odml/litert_lm/js/packages/core/src/cpp",
         # for e2e tests.
         "//runtime/e2e_tests/...",
+        "//third_party/odml/litert_lm/c/...",
+        "//c/...",
     ],
 )
 
