@@ -30,6 +30,9 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "nlohmann/json_fwd.hpp"  // from @nlohmann_json
 #include "litert/c/internal/litert_logging.h"  // from @litert
+#include "litert/cc/litert_layout.h"  // from @litert
+#include "runtime/components/preprocessor/image_preprocessor.h"
+#include "runtime/components/preprocessor/stb_image_preprocessor.h"
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/engine/engine.h"
@@ -57,12 +60,14 @@
   Java_com_google_ai_edge_litertlm_LiteRtLmJni_##METHOD_NAME
 
 namespace {
+using litert::Dimensions;
 using litert::lm::Backend;
 using litert::lm::Conversation;
 using litert::lm::ConversationConfig;
 using litert::lm::Engine;
 using litert::lm::EngineFactory;
 using litert::lm::EngineSettings;
+using litert::lm::ImagePreprocessParameter;
 using litert::lm::InputAudio;
 using litert::lm::InputData;
 using litert::lm::InputImage;
@@ -74,6 +79,7 @@ using litert::lm::ModelAssets;
 using litert::lm::Preface;
 using litert::lm::Responses;
 using litert::lm::SessionConfig;
+using litert::lm::StbImagePreprocessor;
 using litert::lm::proto::SamplerParameters;
 
 void ThrowLiteRtLmJniException(JNIEnv* env, const std::string& message) {
@@ -183,6 +189,11 @@ std::vector<InputData> GetNativeInputData(JNIEnv* env,
   jsize num_inputs = env->GetArrayLength(input_data);
   std::vector<InputData> contents;
   contents.reserve(num_inputs);
+
+  StbImagePreprocessor image_preprocessor;
+  ImagePreprocessParameter image_preprocess_parameter;
+  image_preprocess_parameter.SetTargetDimensions(Dimensions({1, 768, 768, 3}));
+
   for (jsize i = 0; i < num_inputs; ++i) {
     jobject input_obj = env->GetObjectArrayElement(input_data, i);
     if (env->IsInstanceOf(input_obj, text_class)) {
@@ -206,12 +217,27 @@ std::vector<InputData> GetNativeInputData(JNIEnv* env,
           (jbyteArray)env->CallObjectMethod(input_obj, image_get_bytes_mid);
       jsize len = env->GetArrayLength(bytes_jarr);
       jbyte* bytes = env->GetByteArrayElements(bytes_jarr, nullptr);
-      contents.emplace_back(
-          InputImage(std::string(reinterpret_cast<char*>(bytes), len)));
+      InputImage input_image(std::string(reinterpret_cast<char*>(bytes), len));
+      ABSL_LOG(INFO) << "Processing Image with size: "
+                     << input_image.GetRawImageBytes().value().size();
+      absl::StatusOr<InputImage> processed_image =
+          image_preprocessor.Preprocess(input_image,
+                                        image_preprocess_parameter);
+      if (!processed_image.ok()) {
+        ThrowLiteRtLmJniException(env, "Failed to preprocess image: " +
+                                           processed_image.status().ToString());
+        env->ReleaseByteArrayElements(bytes_jarr, bytes, JNI_ABORT);
+        env->DeleteLocalRef(bytes_jarr);
+        env->DeleteLocalRef(input_obj);
+        return contents;
+      }
+      contents.emplace_back(std::move(*processed_image));
       env->ReleaseByteArrayElements(bytes_jarr, bytes, JNI_ABORT);
       env->DeleteLocalRef(bytes_jarr);
     } else {
       ThrowLiteRtLmJniException(env, "Unsupported InputData type");
+      env->DeleteLocalRef(input_obj);
+      return contents;
     }
     env->DeleteLocalRef(input_obj);
   }
@@ -487,6 +513,9 @@ JNI_METHOD(nativeCreateSession)(JNIEnv* env, jclass thiz, jlong engine_pointer,
     session_config.GetMutableSamplerParams() =
         CreateSamplerParamsFromJni(env, sampler_config_obj);
   }
+
+  // Disable prompt template in the session.
+  session_config.SetApplyPromptTemplateInSession(false);
 
   Engine* engine = reinterpret_cast<Engine*>(engine_pointer);
   auto session = engine->CreateSession(session_config);
