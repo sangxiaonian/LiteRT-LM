@@ -509,11 +509,12 @@ LlmLiteRtNpuCompiledModelExecutor::CreateMaskContextWithBufferSharing(
       prefill_input_buffers[MaskSignatures::kMaskInputTimeStep],
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           MaskSignatures::kPrefillMask, MaskSignatures::kMaskInputTimeStep));
+  prefill_input_buffers[MaskSignatures::kMaskInputTimeStep].Clear();
   LITERT_ASSIGN_OR_RETURN(
       prefill_input_buffers[MaskSignatures::kMaskInputTokens],
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           MaskSignatures::kPrefillMask, MaskSignatures::kMaskInputTokens));
-
+  prefill_input_buffers[MaskSignatures::kMaskInputTokens].Clear();
   const std::set<absl::string_view> mask_output_names = {
       MaskSignatures::kMaskOutputLocalMask,
       MaskSignatures::kMaskOutputGlobalMask};
@@ -529,10 +530,12 @@ LlmLiteRtNpuCompiledModelExecutor::CreateMaskContextWithBufferSharing(
       decode_input_buffers[MaskSignatures::kMaskInputTimeStep],
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           MaskSignatures::kDecodeMask, MaskSignatures::kMaskInputTimeStep));
+  decode_input_buffers[MaskSignatures::kMaskInputTimeStep].Clear();
   LITERT_ASSIGN_OR_RETURN(
       decode_input_buffers[MaskSignatures::kMaskInputTokens],
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           MaskSignatures::kDecodeMask, MaskSignatures::kMaskInputTokens));
+  decode_input_buffers[MaskSignatures::kMaskInputTokens].Clear();
 
   for (const auto& mask_output_name : mask_output_names) {
     if (gemma_decode_input_buffers.contains(mask_output_name)) {
@@ -568,6 +571,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateRopeContextWithBufferSharing(
       prefill_input_buffers[RopeSignatures::kInputPos],
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           RopeSignatures::kPrefillRope, RopeSignatures::kInputPos));
+  prefill_input_buffers[RopeSignatures::kInputPos].Clear();
 
   const std::set<absl::string_view> rope_output_names = {
       RopeSignatures::kOutputPosEmbeddingLocalLow,
@@ -586,6 +590,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateRopeContextWithBufferSharing(
       decode_input_buffers[RopeSignatures::kInputPos],
       npu_auxiliary_context.npu_auxiliary_compiled_model.CreateInputBuffer(
           RopeSignatures::kDecodeRope, RopeSignatures::kInputPos));
+  decode_input_buffers[RopeSignatures::kInputPos].Clear();
 
   for (const auto& rope_output_name : rope_output_names) {
     if (gemma_decode_input_buffers.contains(rope_output_name)) {
@@ -626,10 +631,12 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
       LITERT_ASSIGN_OR_RETURN(
           input_kv_cache_buffers[input_name],
           llm_compiled_model.CreateInputBuffer(kPrefillSignature, input_name));
+      input_kv_cache_buffers[input_name].Clear();
     } else {
       LITERT_ASSIGN_OR_RETURN(
           gemma_prefill_input_buffers[input_name],
           llm_compiled_model.CreateInputBuffer(kPrefillSignature, input_name));
+      gemma_prefill_input_buffers[input_name].Clear();
     }
   }
   auto decode_signature = transformer_model->FindSignature(kDecodeSignature);
@@ -641,6 +648,7 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::AllocateTransformerBuffers(
     LITERT_ASSIGN_OR_RETURN(
         gemma_decode_input_buffers[input_name],
         llm_compiled_model.CreateInputBuffer(kDecodeSignature, input_name));
+    gemma_decode_input_buffers[input_name].Clear();
   }
   for (auto output_name : prefill_signature->OutputNames()) {
     if (absl::StartsWith(output_name, kv_cache_slice_k_root_name) ||
@@ -698,6 +706,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateLlmInferenceContextWithBufferSharing(
         LITERT_ASSIGN_OR_RETURN(
             auto corrected_input_buffer,
             llm_compiled_model.CreateInputBuffer(kPrefillSignature, key));
+        corrected_input_buffer.Clear();
         LITERT_ASSIGN_OR_RETURN(prefill_input_buffers[key],
                                 corrected_input_buffer.Duplicate());
       } else {
@@ -1405,6 +1414,12 @@ absl::Status LlmLiteRtNpuCompiledModelExecutor::Reset() {
   RETURN_IF_ERROR(processed_tokens_.RollBackToStep(0));
   sampled_ids_.clear();
   latency_stats_ = {};
+
+  for (auto& buf : llm_inference_context_.prefill_input_buffers) {
+    buf.second.Clear();
+  }
+  // Decode buffers are cleared by clearing the prefill buffers due to buffer
+  // sharing.
   return absl::OkStatus();
 }
 
@@ -1482,10 +1497,11 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForGemma3n(
   LITERT_ASSIGN_OR_RETURN(
       input_kv_cache_buffers[cache_k19],
       llm_compiled_model.CreateInputBuffer(kDecodeSignature, cache_k19));
+  input_kv_cache_buffers[cache_k19].Clear();
   LITERT_ASSIGN_OR_RETURN(
       input_kv_cache_buffers[cache_v19],
       llm_compiled_model.CreateInputBuffer(kDecodeSignature, cache_v19));
-
+  input_kv_cache_buffers[cache_v19].Clear();
   ASSIGN_OR_RETURN(
       auto llm_inference_context,
       CreateLlmInferenceContextWithBufferSharing(
