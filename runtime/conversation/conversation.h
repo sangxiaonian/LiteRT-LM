@@ -31,6 +31,7 @@
 #include "runtime/components/constrained_decoding/constraint_provider.h"
 #include "runtime/components/constrained_decoding/constraint_provider_config.h"
 #include "runtime/components/prompt_template.h"
+#include "runtime/components/tokenizer.h"
 #include "runtime/conversation/io_types.h"
 #include "runtime/conversation/model_data_processor/config_registry.h"
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
@@ -435,6 +436,9 @@ class Conversation {
 
   // Returns the configuration used for creating the Conversation.
   const ConversationConfig& GetConfig() const { return config_; }
+
+  // Returns the tokenizer used for the conversation.
+  const Tokenizer& GetTokenizer() const { return session_->GetTokenizer(); }
 
   // Returns the benchmark info for the conversation. Under the hood, this
   // method triggers the benchmark info collection from the Session. Returns:

@@ -1118,6 +1118,26 @@ TEST_P(ConversationTest, GetBenchmarkInfo) {
             prefill_preface_on_init_ ? 3 : 2);
 }
 
+TEST_P(ConversationTest, GetTokenizer) {
+  ASSERT_OK_AND_ASSIGN(auto model_assets,
+                       ModelAssets::Create(GetTestdataPath(kTestLlmPath)));
+  ASSERT_OK_AND_ASSIGN(auto engine_settings, EngineSettings::CreateDefault(
+                                                 model_assets, Backend::CPU));
+  engine_settings.GetMutableMainExecutorSettings().SetCacheDir(":nocache");
+  engine_settings.GetMutableMainExecutorSettings().SetMaxNumTokens(10);
+  ASSERT_OK_AND_ASSIGN(auto engine, EngineFactory::CreateAny(engine_settings));
+  ASSERT_OK_AND_ASSIGN(
+      auto config,
+      ConversationConfig::Builder()
+          .SetEnableConstrainedDecoding(enable_constrained_decoding_)
+          .SetPrefillPrefaceOnInit(prefill_preface_on_init_)
+          .Build(*engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*engine, config));
+  const Tokenizer& tokenizer = conversation->GetTokenizer();
+  EXPECT_EQ(tokenizer.GetTokens().size(), tokenizer_->GetTokens().size());
+}
+
 INSTANTIATE_TEST_SUITE_P(
     ConversationTest, ConversationTest,
     testing::ValuesIn(ConversationTest::GetTestParams()),
