@@ -38,10 +38,10 @@ absl::StatusOr<std::unique_ptr<Engine::Session>> InitializeSessionBasic(
     VisionExecutor* vision_executor, AudioExecutor* audio_executor,
     const SessionConfig& session_config,
     std::optional<BenchmarkInfo> benchmark_info,
-    ThreadPool* absl_nonnull worker_thread_pool) {
-  auto session =
-      SessionBasic::Create(executor, tokenizer, vision_executor, audio_executor,
-                           session_config, benchmark_info, worker_thread_pool);
+    ThreadPool* absl_nonnull worker_thread_pool, const Environment& env) {
+  auto session = SessionBasic::Create(executor, tokenizer, vision_executor,
+                                      audio_executor, session_config,
+                                      benchmark_info, worker_thread_pool, env);
   return session;
 }
 

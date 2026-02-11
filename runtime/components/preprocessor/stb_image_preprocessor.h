@@ -19,16 +19,25 @@
 #include "runtime/components/preprocessor/image_preprocessor.h"
 #include "runtime/engine/io_types.h"
 
+namespace litert {
+class Environment;
+}
+
 namespace litert::lm {
 
 // Preprocessor for image using stb image library.
 // Main purpose is to process raw image bytes into a resized image TensorBuffer.
 class StbImagePreprocessor : public ImagePreprocessor {
  public:
+  explicit StbImagePreprocessor(const litert::Environment& env) : env_(env) {}
+
   // Preprocesses the raw image bytes into a resized image TensorBuffer.
   absl::StatusOr<InputImage> Preprocess(
       const InputImage& input_image,
       const ImagePreprocessParameter& parameter) override;
+
+ private:
+  const litert::Environment& env_;
 };
 
 }  // namespace litert::lm

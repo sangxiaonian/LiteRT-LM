@@ -75,8 +75,8 @@ absl::StatusOr<std::unique_ptr<SessionBasic>> SessionBasic::Create(
     LlmExecutor* executor, Tokenizer* tokenizer,
     VisionExecutor* vision_executor, AudioExecutor* audio_executor,
     const SessionConfig& session_config,
-    std::optional<BenchmarkInfo> benchmark_info,
-    ThreadPool* worker_thread_pool) {
+    std::optional<BenchmarkInfo> benchmark_info, ThreadPool* worker_thread_pool,
+    const Environment& env) {
   // Check if the session already exists.
   absl::MutexLock lock(occupied_executors_mu_);  // NOLINT
   if (occupied_executors_->contains(executor)) {
@@ -125,8 +125,8 @@ absl::StatusOr<std::unique_ptr<SessionBasic>> SessionBasic::Create(
   occupied_executors_->insert(executor);
   return absl::WrapUnique(new SessionBasic(
       executor, tokenizer, vision_executor, audio_executor, std::move(sampler),
-      session_config, benchmark_info, worker_thread_pool, stop_token_detector,
-      audio_executor_properties));
+      session_config, benchmark_info, worker_thread_pool, env,
+      stop_token_detector, audio_executor_properties));
 }
 
 SessionBasic::~SessionBasic() {
@@ -219,16 +219,16 @@ absl::StatusOr<ExecutorInputs> SessionBasic::ProcessAndCombineContents(
   std::optional<ExecutorVisionData> combined_image_data = std::nullopt;
   if (!all_image_data.empty()) {
     ASSIGN_OR_RETURN(combined_image_data,
-                     CombineExecutorVisionData(all_image_data));
+                     CombineExecutorVisionData(all_image_data, env_));
   }
   std::optional<ExecutorAudioData> combined_audio_data = std::nullopt;
   if (!all_audio_data.empty()) {
     ASSIGN_OR_RETURN(combined_audio_data,
-                     CombineExecutorAudioData(all_audio_data));
+                     CombineExecutorAudioData(all_audio_data, env_));
   }
 
   ASSIGN_OR_RETURN(auto token_ids_buffer,
-                   tokenizer_.TokenIdsToTensorBuffer(combined_token_ids));
+                   tokenizer_.TokenIdsToTensorBuffer(combined_token_ids, env_));
 
   ExecutorInputs inputs(ExecutorTextData(std::move(token_ids_buffer)),
                         std::move(combined_image_data),
@@ -266,7 +266,7 @@ absl::Status SessionBasic::RunPrefill(const std::vector<InputData>& contents) {
       benchmark_info_->GetBenchmarkParams().num_prefill_tokens() > 0) {
     ASSIGN_OR_RETURN(preprocessed_contents,
                      PreprocessContents(contents, session_config_, tokenizer_,
-                                        benchmark_info_));
+                                        env_, benchmark_info_));
   } else {
     bool is_first_turn = session_state_ == SessionState::kFresh;
     ContentType content_type;
@@ -283,7 +283,7 @@ absl::Status SessionBasic::RunPrefill(const std::vector<InputData>& contents) {
                              tokenizer_, is_first_turn));
     ASSIGN_OR_RETURN(preprocessed_contents,
                      PreprocessContents(templated_contents, session_config_,
-                                        tokenizer_, benchmark_info_));
+                                        tokenizer_, env_, benchmark_info_));
   }
 
   return PrefillInternal(preprocessed_contents,
@@ -310,7 +310,7 @@ absl::StatusOr<std::unique_ptr<TaskController>> SessionBasic::RunPrefillAsync(
       benchmark_info_->GetBenchmarkParams().num_prefill_tokens() > 0) {
     ASSIGN_OR_RETURN(preprocessed_contents,
                      PreprocessContents(contents, session_config_, tokenizer_,
-                                        benchmark_info_));
+                                        env_, benchmark_info_));
   } else {
     bool is_first_turn = session_state_ == SessionState::kFresh;
     ContentType content_type;
@@ -327,7 +327,7 @@ absl::StatusOr<std::unique_ptr<TaskController>> SessionBasic::RunPrefillAsync(
                              tokenizer_, is_first_turn));
     ASSIGN_OR_RETURN(preprocessed_contents,
                      PreprocessContents(templated_contents, session_config_,
-                                        tokenizer_, benchmark_info_));
+                                        tokenizer_, env_, benchmark_info_));
   }
   RETURN_IF_ERROR(worker_thread_pool_.Schedule(
       [this, preprocessed_contents = std::move(preprocessed_contents),
@@ -367,7 +367,7 @@ absl::StatusOr<Responses> SessionBasic::DecodeInternal(
     if (!templated_contents.empty()) {
       ASSIGN_OR_RETURN(std::vector<InputData> preprocessed_contents,
                        PreprocessContents(templated_contents, session_config_,
-                                          tokenizer_, benchmark_info_));
+                                          tokenizer_, env_, benchmark_info_));
       RETURN_IF_ERROR(PrefillInternal(preprocessed_contents,
                                       /*wait_for_completion=*/true));
     }
@@ -375,28 +375,28 @@ absl::StatusOr<Responses> SessionBasic::DecodeInternal(
   session_state_ = SessionState::kDecoded;
 
   if (sampler_ == nullptr) {
-    ASSIGN_OR_RETURN(
-        auto responses,
-        Decode(executor_, tokenizer_, stop_token_detector_,
-               session_config_.GetNumOutputCandidates(),
-               decode_config.GetConstraint(), benchmark_info_, &cancelled_,
-               decode_config.GetMaxOutputTokens().value_or(
-                   session_config_.GetMaxOutputTokens())));
+    ASSIGN_OR_RETURN(auto responses,
+                     Decode(executor_, tokenizer_, stop_token_detector_,
+                            session_config_.GetNumOutputCandidates(),
+                            decode_config.GetConstraint(), benchmark_info_,
+                            env_, &cancelled_,
+                            decode_config.GetMaxOutputTokens().value_or(
+                                session_config_.GetMaxOutputTokens())));
     return responses;
   } else {
     std::vector<int> decoded_ids(session_config_.GetNumOutputCandidates(),
                                  last_prefill_token_id_);
     LITERT_ASSIGN_OR_RETURN(
         auto decoded_ids_buffer,
-        CopyToTensorBuffer<int>(decoded_ids,
-                                {session_config_.GetNumOutputCandidates(), 1}));
+        CopyToTensorBuffer<int>(
+            decoded_ids, {session_config_.GetNumOutputCandidates(), 1}, env_));
     ASSIGN_OR_RETURN(
         auto responses,
         DecodeCustomSampling(executor_, tokenizer_, stop_token_detector_,
                              session_config_.GetNumOutputCandidates(),
                              *sampler_, std::move(decoded_ids_buffer),
                              decode_config.GetConstraint(), benchmark_info_,
-                             &cancelled_,
+                             env_, &cancelled_,
                              decode_config.GetMaxOutputTokens().value_or(
                                  session_config_.GetMaxOutputTokens())));
     return responses;
@@ -410,7 +410,7 @@ absl::Status SessionBasic::DecodeInternalStreaming(
     RETURN_IF_ERROR(DecodeStreaming(
         executor_, tokenizer_, stop_token_detector_,
         session_config_.GetNumOutputCandidates(), decode_config.GetConstraint(),
-        benchmark_info_, std::move(callback), &cancelled_,
+        benchmark_info_, std::move(callback), env_, &cancelled_,
         decode_config.GetMaxOutputTokens().value_or(
             session_config_.GetMaxOutputTokens())));
   } else {
@@ -418,14 +418,14 @@ absl::Status SessionBasic::DecodeInternalStreaming(
                                  last_prefill_token_id_);
     LITERT_ASSIGN_OR_RETURN(
         auto decoded_ids_buffer,
-        CopyToTensorBuffer<int>(decoded_ids,
-                                {session_config_.GetNumOutputCandidates(), 1}));
+        CopyToTensorBuffer<int>(
+            decoded_ids, {session_config_.GetNumOutputCandidates(), 1}, env_));
 
     RETURN_IF_ERROR(DecodeCustomSamplingStreaming(
         executor_, tokenizer_, stop_token_detector_,
         session_config_.GetNumOutputCandidates(), *sampler_,
         std::move(decoded_ids_buffer), decode_config.GetConstraint(),
-        benchmark_info_, std::move(callback), &cancelled_,
+        benchmark_info_, std::move(callback), env_, &cancelled_,
         decode_config.GetMaxOutputTokens().value_or(
             session_config_.GetMaxOutputTokens())));
   }
@@ -513,14 +513,14 @@ SessionBasic::RunTextScoringAsync(
         std::vector<int> decoded_ids(session_config_.GetNumOutputCandidates(),
                                      last_prefill_token_id_);
         auto decoded_ids_buffer = CopyToTensorBuffer<int>(
-            decoded_ids, {session_config_.GetNumOutputCandidates(), 1});
+            decoded_ids, {session_config_.GetNumOutputCandidates(), 1}, env_);
         if (!decoded_ids_buffer.HasValue()) {
           callback(absl::InternalError(decoded_ids_buffer.Error().Message()));
           return;
         }
         callback(ScoreCustomSampling(
             executor_, tokenizer_, target_text, temperature,
-            std::move(decoded_ids_buffer.Value()), store_token_lengths));
+            std::move(decoded_ids_buffer.Value()), env_, store_token_lengths));
       }));
   return nullptr;
 }

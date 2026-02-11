@@ -53,7 +53,8 @@ class EngineFactory {
  public:
   // Function signature to create an Engine instance.
   using Creator = absl::AnyInvocable<absl::StatusOr<std::unique_ptr<Engine>>(
-      EngineSettings settings, absl::string_view input_prompt_as_hint)>;
+      EngineSettings settings, absl::string_view input_prompt_as_hint,
+      std::unique_ptr<Environment> env)>;
 
   // The type of engine to create.
   enum class EngineType {
@@ -73,16 +74,18 @@ class EngineFactory {
 
   // Creates a default Engine instance of type kLiteRTCompiledModel.
   static absl::StatusOr<std::unique_ptr<Engine>> CreateDefault(
-      EngineSettings settings, absl::string_view input_prompt_as_hint = "") {
+      EngineSettings settings, absl::string_view input_prompt_as_hint = "",
+      std::unique_ptr<Environment> env = nullptr) {
     return Create(EngineType::kLiteRTCompiledModel, std::move(settings),
-                  input_prompt_as_hint);
+                  input_prompt_as_hint, std::move(env));
   }
 
   // Creates an Engine instance of any registered type.
   // If multiple engine types are registered, the first one is used.
   // The ordering of the engine can be observed using ListEngineTypes().
   static absl::StatusOr<std::unique_ptr<Engine>> CreateAny(
-      EngineSettings settings, absl::string_view input_prompt_as_hint = "") {
+      EngineSettings settings, absl::string_view input_prompt_as_hint = "",
+      std::unique_ptr<Environment> env = nullptr) {
     auto& instance = Instance();
     if (instance.registry_.size() != 1) {
       ABSL_LOG(WARNING) << "Multiple engine types are registered. "
@@ -92,20 +95,22 @@ class EngineFactory {
     }
 
     return Create(instance.registry_.begin()->first, std::move(settings),
-                  input_prompt_as_hint);
+                  input_prompt_as_hint, std::move(env));
   }
 
   // Creates an Engine instance of the given type.
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
       EngineType engine_type, EngineSettings settings,
-      absl::string_view input_prompt_as_hint = "") {
+      absl::string_view input_prompt_as_hint = "",
+      std::unique_ptr<Environment> env = nullptr) {
     auto& instance = Instance();
     auto it = instance.registry_.find(engine_type);
     if (it == instance.registry_.end()) {
       return absl::NotFoundError(
           absl::StrCat("Engine type not found: ", engine_type));
     }
-    return it->second(std::move(settings), input_prompt_as_hint);
+    return it->second(std::move(settings), input_prompt_as_hint,
+                      std::move(env));
   };
 
   // Returns the singleton instance of the EngineFactory.

@@ -38,7 +38,7 @@ namespace litert::lm {
 // - enable_constrained_decoding: Whether to enable constrained decoding.
 // - capabilities: The capabilities of the prompt template.
 absl::StatusOr<std::unique_ptr<ModelDataProcessor>> CreateModelDataProcessor(
-    const DataProcessorConfig& config,
+    const litert::Environment& env, const DataProcessorConfig& config,
     std::optional<Preface> preface = std::nullopt,
     const Tokenizer* tokenizer = nullptr,
     const std::vector<std::vector<int>>& stop_token_ids = {},

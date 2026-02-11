@@ -37,6 +37,7 @@
 #include "litert/cc/litert_model.h"  // from @litert
 #include "litert/cc/litert_options.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
+#include "litert/test/matchers.h"  // from @litert
 #include "runtime/components/preprocessor/audio_preprocessor.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/status_macros.h"
@@ -224,8 +225,9 @@ TEST(AudioPreprocessorMiniAudioTest, UsmPreprocessing) {
   frontend_mel_spectrogram.resize(true_count * config.GetNumMelBins());
 
   // Create MiniAudio preprocessor.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   ASSERT_OK_AND_ASSIGN(auto preprocessor,
-                       AudioPreprocessorMiniAudio::Create(config));
+                       AudioPreprocessorMiniAudio::Create(config, env));
   ASSERT_OK_AND_ASSIGN(auto preprocessed_audio,
                        preprocessor->Preprocess(InputAudio(raw_audio_data)));
   ASSERT_OK_AND_ASSIGN(auto preprocessed_mel_spectrogram_tensor,
@@ -267,8 +269,9 @@ TEST(AudioPreprocessorMiniAudioTest, UsmPreprocessingWithPcmFrames) {
   frontend_mel_spectrogram.resize(true_count * config.GetNumMelBins());
 
   // Create MiniAudio preprocessor.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   ASSERT_OK_AND_ASSIGN(auto preprocessor,
-                       AudioPreprocessorMiniAudio::Create(config));
+                       AudioPreprocessorMiniAudio::Create(config, env));
   ASSERT_OK_AND_ASSIGN(auto preprocessed_audio,
                        preprocessor->Preprocess(InputAudio(pcm_frames)));
   ASSERT_OK_AND_ASSIGN(auto preprocessed_mel_spectrogram_tensor,
@@ -310,8 +313,9 @@ TEST(AudioPreprocessorMiniAudioTest, UsmPreprocessingTwice) {
   frontend_mel_spectrogram.resize(true_count * config.GetNumMelBins());
 
   // Create MiniAudio preprocessor.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   ASSERT_OK_AND_ASSIGN(auto preprocessor,
-                       AudioPreprocessorMiniAudio::Create(config));
+                       AudioPreprocessorMiniAudio::Create(config, env));
   ASSERT_OK_AND_ASSIGN(auto preprocessed_audio,
                        preprocessor->Preprocess(InputAudio(raw_audio_data)));
   ASSERT_OK_AND_ASSIGN(auto preprocessed_mel_spectrogram_tensor,

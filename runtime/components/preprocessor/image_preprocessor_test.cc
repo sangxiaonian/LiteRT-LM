@@ -25,6 +25,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/test/matchers.h"  // from @litert
@@ -56,9 +57,10 @@ TEST(ImagePreprocessorTest, Preprocess) {
 
   // Create a dummy InputImage. The content doesn't matter for the mock.
   std::vector<float> dummy_input_data(1 * 10 * 10 * 3, 0.0f);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer dummy_input_tensor_buffer,
-      CopyToTensorBuffer<float>(dummy_input_data, {1, 10, 10, 3}));
+      CopyToTensorBuffer<float>(dummy_input_data, {1, 10, 10, 3}, env));
   InputImage test_input_image(std::move(dummy_input_tensor_buffer));
 
   // Create a dummy TensorBuffer to be returned *inside* the InputImage.
@@ -67,7 +69,7 @@ TEST(ImagePreprocessorTest, Preprocess) {
   std::vector<float> dummy_data(1 * 224 * 224 * 3, 0.5f);
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer expected_tensor_buffer,
-      CopyToTensorBuffer<float>(dummy_data, {1, 224, 224, 3}));
+      CopyToTensorBuffer<float>(dummy_data, {1, 224, 224, 3}, env));
   InputImage expected_output_image(std::move(expected_tensor_buffer));
 
   // Set up the mock expectation.

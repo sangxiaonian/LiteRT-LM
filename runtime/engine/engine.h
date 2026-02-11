@@ -28,6 +28,10 @@
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
 
+namespace litert {
+class Environment;
+}
+
 namespace litert::lm {
 
 // Engine is the interface for the LLM runtime. It is responsible for
@@ -65,6 +69,9 @@ namespace litert::lm {
 class Engine {
  public:
   virtual ~Engine() = default;
+
+  // Returns the environment associated with the engine.
+  virtual const litert::Environment& GetEnvironment() const = 0;
 
   // Session is responsible for hosting the internal state (e.g. conversation
   // history) of each separate interaction with LLM.

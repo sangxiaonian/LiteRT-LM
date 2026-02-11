@@ -102,22 +102,26 @@ class DecodeOneStep {
                 Tokenizer* absl_nonnull tokenizer, int num_output_candidates,
                 const StopTokenDetector& stop_token_detector,
                 std::optional<BenchmarkInfo>& benchmark_info,
-                std::optional<Sampler*> sampler, Constraint* constraint)
+                std::optional<Sampler*> sampler, Constraint* constraint,
+                const litert::Environment& env)
       : executor_(*executor),
         tokenizer_(*tokenizer),
         num_output_candidates_(num_output_candidates),
         sampler_(sampler),
         benchmark_info_(benchmark_info),
-        stop_token_detector_(stop_token_detector) {
+        stop_token_detector_(stop_token_detector),
+        env_(env) {
     if (constraint != nullptr) {
       constrained_decoder_ = std::make_unique<ConstrainedDecoder>(
           constraint, num_output_candidates_);
     }
     if (!sampler_.has_value()) {  // Internal sampling setup
-      auto output_tokens = CreateTensorBuffer<int>({num_output_candidates_, 1});
+      auto output_tokens =
+          CreateTensorBuffer<int>({num_output_candidates_, 1}, env_);
       output_tokens_ = std::move(*output_tokens);
     } else {  // External sampling setup
-      auto scores_tensor = CreateTensorBuffer<float>({num_output_candidates_});
+      auto scores_tensor =
+          CreateTensorBuffer<float>({num_output_candidates_}, env_);
       scores_tensor_ = std::move(*scores_tensor);
     }
     result_text_ = std::vector<std::string>(num_output_candidates_, "");
@@ -312,6 +316,7 @@ class DecodeOneStep {
   std::unique_ptr<ConstrainedDecoder> constrained_decoder_;
   std::optional<BenchmarkInfo> benchmark_info_;
   StopTokenDetector stop_token_detector_;
+  const litert::Environment& env_;
 
   // For internal sampling.
   // Holds the output token IDs. Dim: {num_output_candidates, 1}
@@ -372,7 +377,8 @@ absl::StatusOr<Responses> Decode(
     std::optional<Sampler*> sampler, Constraint* constraint,
     std::optional<litert::TensorBuffer> decoded_ids,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)>& callback,
-    std::atomic<bool>* cancelled, int max_output_tokens) {
+    std::atomic<bool>* cancelled, const litert::Environment& env,
+    int max_output_tokens) {
   const bool is_streaming = callback != nullptr;
   const bool is_custom_sampling = sampler.has_value();
 
@@ -402,7 +408,7 @@ absl::StatusOr<Responses> Decode(
   const int max_num_tokens = TryGetMaxNumTokens(executor);
   DecodeOneStep run_one_step(&executor, &tokenizer, num_output_candidates,
                              stop_token_detector, benchmark_info, sampler,
-                             constraint);
+                             constraint, env);
   while (true) {
     if (cancelled != nullptr && cancelled->load()) {
       if (benchmark_info.has_value()) {
@@ -535,7 +541,8 @@ absl::StatusOr<Responses> Decode(
 absl::StatusOr<Responses> Score(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const std::vector<absl::string_view>& target_texts, const float temperature,
-    litert::TensorBuffer decoded_ids, bool store_token_lengths) {
+    litert::TensorBuffer decoded_ids, const litert::Environment& env,
+    bool store_token_lengths) {
   const int num_output_candidates = target_texts.size();
   const int max_num_tokens = TryGetMaxNumTokens(executor);
   std::optional<BenchmarkInfo> benchmark_info;
@@ -545,7 +552,7 @@ absl::StatusOr<Responses> Score(
                              /*num_output_candidates=*/num_output_candidates,
                              dummy_stop_token_detector, benchmark_info,
                              /*sampler=*/std::nullopt,
-                             /*constraint=*/nullptr);
+                             /*constraint=*/nullptr, env);
   std::vector<std::vector<int>> ids_for_each_target_in_batch;
   ids_for_each_target_in_batch.reserve(target_texts.size());
   int max_num_tokens_of_target_texts = 0;

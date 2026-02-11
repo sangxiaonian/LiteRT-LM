@@ -27,6 +27,10 @@
 #include "runtime/components/preprocessor/mel_filterbank.h"
 #include "runtime/engine/io_types.h"
 
+namespace litert {
+class Environment;
+}
+
 namespace litert::lm {
 
 // Audio preprocessor implementation using MiniAudio library and kissfft
@@ -39,7 +43,7 @@ class AudioPreprocessorMiniAudio : public AudioPreprocessor {
   // Returns:
   //   A unique pointer to the AudioPreprocessorMiniAudio instance.
   static absl::StatusOr<std::unique_ptr<AudioPreprocessorMiniAudio>> Create(
-      const AudioPreprocessorConfig& config);
+      const AudioPreprocessorConfig& config, const litert::Environment& env);
 
   // Decodes the raw audio bytes to PCM frames using MiniAudio library.
   // Args:
@@ -74,10 +78,12 @@ class AudioPreprocessorMiniAudio : public AudioPreprocessor {
  private:
   explicit AudioPreprocessorMiniAudio(
       const AudioPreprocessorConfig& config,
-      std::unique_ptr<MelFilterbank> mel_filterbank)
+      std::unique_ptr<MelFilterbank> mel_filterbank,
+      const litert::Environment& env)
       : config_(config),
         mel_filterbank_(std::move(mel_filterbank)),
-        input_queue_(std::vector<float>()) {
+        input_queue_(std::vector<float>()),
+        env_(env) {
     samples_to_next_step_ = config_.GetFrameLength();
   }
 
@@ -94,6 +100,7 @@ class AudioPreprocessorMiniAudio : public AudioPreprocessor {
   std::unique_ptr<MelFilterbank> mel_filterbank_;
   std::vector<float> input_queue_;
   int samples_to_next_step_;
+  const litert::Environment& env_;
 };
 
 }  // namespace litert::lm

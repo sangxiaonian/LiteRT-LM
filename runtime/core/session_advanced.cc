@@ -92,6 +92,8 @@ SessionAdvanced::RunPrefillAsync(
     return absl::FailedPreconditionError("Execution manager is not available.");
   }
 
+  ASSIGN_OR_RETURN(const auto* env, execution_manager_lock->GetEnvironment());
+
   std::vector<InputData> preprocessed_contents;
   if (session_info_->benchmark_info.has_value() &&
       session_info_->benchmark_info->GetBenchmarkParams().num_prefill_tokens() >
@@ -99,7 +101,7 @@ SessionAdvanced::RunPrefillAsync(
     ASSIGN_OR_RETURN(
         preprocessed_contents,
         PreprocessContents(contents, session_info_->session_config, *tokenizer_,
-                           session_info_->benchmark_info));
+                           *env, session_info_->benchmark_info));
   } else {
     bool is_first_turn = session_state_ == SessionState::kFresh;
     ContentType content_type;
@@ -117,7 +119,7 @@ SessionAdvanced::RunPrefillAsync(
     ASSIGN_OR_RETURN(
         preprocessed_contents,
         PreprocessContents(templated_contents, session_info_->session_config,
-                           *tokenizer_, session_info_->benchmark_info));
+                           *tokenizer_, *env, session_info_->benchmark_info));
   }
   ASSIGN_OR_RETURN(auto task_id, execution_manager_lock->GetNewTaskId());
   RETURN_IF_ERROR(execution_manager_lock->AddPrefillTask(
@@ -215,9 +217,10 @@ absl::StatusOr<std::unique_ptr<TaskController>> SessionAdvanced::RunDecodeAsync(
   auto cancelled = std::make_shared<std::atomic<bool>>(false);
 
   auto execution_manager_lock = execution_manager_.lock();
-  if (execution_manager_lock == nullptr) {
-    return absl::FailedPreconditionError("Execution manager is not available.");
+  return absl::FailedPreconditionError("Execution manager is not available.");
   }
+
+  ASSIGN_OR_RETURN(const auto* env, execution_manager_lock->GetEnvironment());
 
   // We need to do a last prefill before initializing the decode, to make sure
   // the prompt is correctly set up for decode.
@@ -233,7 +236,7 @@ absl::StatusOr<std::unique_ptr<TaskController>> SessionAdvanced::RunDecodeAsync(
       ASSIGN_OR_RETURN(
           std::vector<InputData> preprocessed_contents,
           PreprocessContents(templated_contents, session_info_->session_config,
-                             *tokenizer_, session_info_->benchmark_info));
+                             *tokenizer_, *env, session_info_->benchmark_info));
       auto noop_callback = [](absl::StatusOr<Responses> responses) {};
       ASSIGN_OR_RETURN(auto task_id, execution_manager_lock->GetNewTaskId());
       RETURN_IF_ERROR(execution_manager_lock->AddPrefillTask(

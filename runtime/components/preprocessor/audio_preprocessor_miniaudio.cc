@@ -30,6 +30,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_element_type.h"  // from @litert
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
@@ -212,13 +213,15 @@ absl::Status AudioPreprocessorMiniAudio::ToLogMelSpectrogram(
 }
 
 absl::StatusOr<std::unique_ptr<AudioPreprocessorMiniAudio>>
-AudioPreprocessorMiniAudio::Create(const AudioPreprocessorConfig& config) {
+AudioPreprocessorMiniAudio::Create(const AudioPreprocessorConfig& config,
+                                   const litert::Environment& env) {
   auto mel_filterbank = std::make_unique<MelFilterbank>();
   RETURN_IF_ERROR(mel_filterbank->Initialize(
       config.GetFftBins(), config.GetSampleRateHz(), config.GetNumMelBins(),
       config.GetMelLowHz(), config.GetMelHighHz()));
+  // Using `new` to access private constructor.
   return absl::WrapUnique(
-      new AudioPreprocessorMiniAudio(config, std::move(mel_filterbank)));
+      new AudioPreprocessorMiniAudio(config, std::move(mel_filterbank), env));
 }
 
 // The preprocessing steps are:
@@ -259,8 +262,9 @@ absl::StatusOr<InputAudio> AudioPreprocessorMiniAudio::Preprocess(
       Layout(Dimensions({1, num_frames, config_.GetNumMelBins()})));
   LITERT_ASSIGN_OR_RETURN(
       auto mel_spectrograms_tensor,
-      TensorBuffer::CreateManagedHostMemory(
-          mel_tensor_type, log_mel_spectrograms.size() * sizeof(float)));
+      TensorBuffer::CreateManaged(env_, TensorBufferType::kHostMemory,
+                                  mel_tensor_type,
+                                  log_mel_spectrograms.size() * sizeof(float)));
   LITERT_RETURN_IF_ERROR(mel_spectrograms_tensor.Write<float>(
       absl::MakeSpan(log_mel_spectrograms)));
   return InputAudio(std::move(mel_spectrograms_tensor));

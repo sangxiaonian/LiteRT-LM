@@ -24,6 +24,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/test/matchers.h"  // from @litert
@@ -43,9 +44,10 @@ TEST(ByPassImagePreprocessorTest, PreprocessWithTensorBuffer) {
   // Create an InputImage with a TensorBuffer.
   size_t num_elements = 1 * 32 * 32 * 3;
   std::vector<float> input_data(num_elements, 0.5f);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer input_tensor_buffer,
-      CopyToTensorBuffer<float>(input_data, {1, 32, 32, 3}));
+      CopyToTensorBuffer<float>(input_data, {1, 32, 32, 3}, env));
   InputImage test_input_image(std::move(input_tensor_buffer));
 
   // Call the Preprocess method.

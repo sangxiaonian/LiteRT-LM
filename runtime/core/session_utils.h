@@ -21,6 +21,7 @@
 
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "runtime/components/tokenizer.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
@@ -35,7 +36,8 @@ absl::StatusOr<std::string> MaybeGetBosString(
 // The util function to convert the string to processed input text.
 absl::StatusOr<InputText> StringToProcessedInputText(
     absl::string_view text, const SessionConfig& session_config,
-    Tokenizer& tokenizer, const std::optional<BenchmarkInfo>& benchmark_info);
+    Tokenizer& tokenizer, const Environment& env,
+    const std::optional<BenchmarkInfo>& benchmark_info);
 
 // Util function for applying the prompt templates.
 // contents: The input contents to apply the prompt templates.
@@ -59,7 +61,8 @@ absl::StatusOr<std::vector<InputData>> ApplyPromptTemplates(
 // Text input will be preprocessed by the tokenizer.
 absl::StatusOr<std::vector<InputData>> PreprocessContents(
     const std::vector<InputData>& contents, const SessionConfig& session_config,
-    Tokenizer& tokenizer, const std::optional<BenchmarkInfo>& benchmark_info);
+    Tokenizer& tokenizer, const Environment& env,
+    const std::optional<BenchmarkInfo>& benchmark_info);
 
 }  // namespace litert::lm
 

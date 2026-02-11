@@ -56,11 +56,11 @@ class Tokenizer {
   // Helper function to convert a vector of token ids into a 1D
   // litert::TensorBuffer of shape [batch_size(==1), num_tokens].
   absl::StatusOr<TensorBuffer> TokenIdsToTensorBuffer(
-      const TokenIds& token_ids) {
+      const TokenIds& token_ids, const ::litert::Environment& env) {
     LITERT_ASSIGN_OR_RETURN(
         auto tensor,
         CopyToTensorBuffer<int>(absl::MakeConstSpan(token_ids),
-                                {1, static_cast<int>(token_ids.size())}));
+                                {1, static_cast<int>(token_ids.size())}, env));
     return tensor;
   }
 

@@ -24,9 +24,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
+#include "litert/test/matchers.h"  // from @litert
 #include "runtime/components/preprocessor/image_preprocessor.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/util/test_utils.h"  // NOLINT
@@ -41,7 +43,8 @@ constexpr char kTestdataDir[] =
     "litert_lm/runtime/components/preprocessor/testdata/";
 
 TEST(StbImagePreprocessorTest, PreprocessSuccess) {
-  StbImagePreprocessor preprocessor;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  StbImagePreprocessor preprocessor(env);
 
   // Load the image file.
   const std::string image_path =
@@ -157,7 +160,8 @@ TEST(StbImagePreprocessorTest, PreprocessSuccess) {
 }
 
 TEST(StbImagePreprocessorTest, PreprocessFailedWithInvalidDimensions) {
-  StbImagePreprocessor preprocessor;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  StbImagePreprocessor preprocessor(env);
   std::string dummy_bytes = "dummy";
   // Invalid dimensions size (e.g., missing channels).
   ImagePreprocessParameter parameter;
@@ -168,7 +172,8 @@ TEST(StbImagePreprocessorTest, PreprocessFailedWithInvalidDimensions) {
 }
 
 TEST(StbImagePreprocessorTest, PreprocessFailedWithInvalidImage) {
-  StbImagePreprocessor preprocessor;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  StbImagePreprocessor preprocessor(env);
   std::string invalid_image_bytes = "invalid_image_bytes";
   ImagePreprocessParameter parameter;
   parameter.SetTargetDimensions({1, 224, 224, 3});

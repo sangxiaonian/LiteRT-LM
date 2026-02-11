@@ -174,6 +174,18 @@ class ExecutionManager {
   absl::StatusOr<BenchmarkInfo*> GetMutableBenchmarkInfo(SessionId session_id)
       ABSL_LOCKS_EXCLUDED(session_and_task_lookup_mutex_);
 
+  // Returns the LiteRT environment.
+  // Returns:
+  // - The LiteRT environment.
+  // - FAILED_PRECONDITION if the LiteRT environment is not available.
+  absl::StatusOr<const ::litert::Environment*> GetEnvironment() const {
+    if (litert_env_ == nullptr) {
+      return absl::FailedPreconditionError(
+          "LiteRT environment is not available.");
+    }
+    return litert_env_;
+  }
+
   // Returns a new task ID.
   // The returned task ID is guaranteed to be unique.
   absl::StatusOr<TaskId> GetNewTaskId();

@@ -30,6 +30,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "runtime/components/sampler.h"
 #include "runtime/components/stop_token_detector.h"
 #include "runtime/components/tokenizer.h"
@@ -64,7 +65,7 @@ class SessionBasic : public Engine::Session {
       VisionExecutor* vision_executor, AudioExecutor* audio_executor,
       const SessionConfig& session_config,
       std::optional<BenchmarkInfo> benchmark_info,
-      ThreadPool* absl_nonnull worker_thread_pool);
+      ThreadPool* absl_nonnull worker_thread_pool, const Environment& env);
 
   virtual ~SessionBasic();
 
@@ -161,7 +162,7 @@ class SessionBasic : public Engine::Session {
       VisionExecutor* vision_executor, AudioExecutor* audio_executor,
       std::unique_ptr<Sampler> sampler, const SessionConfig& session_config,
       std::optional<BenchmarkInfo> benchmark_info,
-      ThreadPool* absl_nonnull worker_thread_pool,
+      ThreadPool* absl_nonnull worker_thread_pool, const Environment& env,
       const StopTokenDetector& stop_token_detector,
       std::optional<AudioExecutorProperties> audio_executor_properties =
           std::nullopt)
@@ -173,6 +174,7 @@ class SessionBasic : public Engine::Session {
         session_config_(session_config),
         benchmark_info_(benchmark_info),
         worker_thread_pool_(*worker_thread_pool),
+        env_(env),
         stop_token_detector_(stop_token_detector),
         audio_executor_properties_(audio_executor_properties) {}
 
@@ -216,6 +218,9 @@ class SessionBasic : public Engine::Session {
 
   // The thread pool used for the session.
   ThreadPool& worker_thread_pool_;
+
+  // The environment used for the session.
+  const Environment& env_;
 
   // The stop token detector used for the session.
   StopTokenDetector stop_token_detector_;

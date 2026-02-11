@@ -35,6 +35,10 @@
 #include "runtime/conversation/model_data_processor/model_data_processor.h"
 #include "runtime/engine/io_types.h"
 
+namespace litert {
+class Environment;
+}
+
 namespace litert::lm {
 
 // Gemma3DataProcessor is a model data processor for Gemma3 and Gemma3N models.
@@ -44,6 +48,7 @@ class Gemma3DataProcessor
  public:
   // Creates a Gemma3DataProcessor instance.
   static absl::StatusOr<std::unique_ptr<Gemma3DataProcessor>> Create(
+      const litert::Environment& env,
       Gemma3DataProcessorConfig config = Gemma3DataProcessorConfig(),
       std::optional<Preface> preface = std::nullopt,
       const Tokenizer* tokenizer = nullptr,

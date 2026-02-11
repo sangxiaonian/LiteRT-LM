@@ -578,18 +578,19 @@ absl::StatusOr<ExecutorInputs> ExecutionManager::ProcessAndCombineContents(
   std::optional<ExecutorVisionData> combined_image_data = std::nullopt;
   if (!all_image_data.empty()) {
     ASSIGN_OR_RETURN(combined_image_data,
-                     CombineExecutorVisionData(all_image_data));
+                     CombineExecutorVisionData(all_image_data, *litert_env_));
   }
   std::optional<ExecutorAudioData> combined_audio_data = std::nullopt;
   if (!all_audio_data.empty()) {
     ASSIGN_OR_RETURN(combined_audio_data,
-                     CombineExecutorAudioData(all_audio_data));
+                     CombineExecutorAudioData(all_audio_data, *litert_env_));
   }
 
   last_prefill_token_id_ = combined_token_ids.back();
 
-  ASSIGN_OR_RETURN(auto token_ids_buffer,
-                   tokenizer_->TokenIdsToTensorBuffer(combined_token_ids));
+  ASSIGN_OR_RETURN(
+      auto token_ids_buffer,
+      tokenizer_->TokenIdsToTensorBuffer(combined_token_ids, *litert_env_));
 
   ExecutorInputs inputs(ExecutorTextData(std::move(token_ids_buffer)),
                         std::move(combined_image_data),
@@ -785,8 +786,8 @@ absl::Status ExecutionManager::AddDecodeTask(
       optional_sampler = session_info->sampler.get();
       std::vector<int> decoded_ids(num_output_candidates,
                                    session_info->last_prefill_token_id);
-      auto decoded_ids_buffer_or =
-          CopyToTensorBuffer<int>(decoded_ids, {num_output_candidates, 1});
+      auto decoded_ids_buffer_or = CopyToTensorBuffer<int>(
+          decoded_ids, {num_output_candidates, 1}, *litert_env_);
       if (!decoded_ids_buffer_or.HasValue()) {
         callback(absl::InternalError(decoded_ids_buffer_or.Error().Message()));
         return;

@@ -27,6 +27,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/constrained_decoding/constraint.h"
 #include "runtime/components/sampler.h"
@@ -65,7 +66,7 @@ absl::StatusOr<Responses> Decode(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
     Constraint* constraint, std::optional<BenchmarkInfo>& benchmark_info,
-    std::atomic<bool>* cancelled = nullptr,
+    const litert::Environment& env, std::atomic<bool>* cancelled = nullptr,
     int max_output_tokens = std::numeric_limits<int>::max());
 
 // Runs the pipeline to decode the input prompt. The function is similar to
@@ -79,7 +80,7 @@ absl::Status DecodeStreaming(
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
     Constraint* constraint, std::optional<BenchmarkInfo>& benchmark_info,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
-    std::atomic<bool>* cancelled = nullptr,
+    const litert::Environment& env, std::atomic<bool>* cancelled = nullptr,
     int max_output_tokens = std::numeric_limits<int>::max());
 
 // Runs the pipeline to decode the input prompt.
@@ -99,7 +100,7 @@ absl::StatusOr<Responses> DecodeCustomSampling(
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
     Sampler& sampler, litert::TensorBuffer decoded_ids, Constraint* constraint,
     std::optional<BenchmarkInfo>& benchmark_info,
-    std::atomic<bool>* cancelled = nullptr,
+    const litert::Environment& env, std::atomic<bool>* cancelled = nullptr,
     int max_output_tokens = std::numeric_limits<int>::max());
 
 // Runs the pipeline to decode the input prompt. The function is similar to
@@ -114,7 +115,7 @@ absl::Status DecodeCustomSamplingStreaming(
     Sampler& sampler, litert::TensorBuffer decoded_ids, Constraint* constraint,
     std::optional<BenchmarkInfo>& benchmark_info,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
-    std::atomic<bool>* cancelled = nullptr,
+    const litert::Environment& env, std::atomic<bool>* cancelled = nullptr,
     int max_output_tokens = std::numeric_limits<int>::max());
 
 // Runs the pipeline to score the input prompt.
@@ -130,7 +131,8 @@ absl::Status DecodeCustomSamplingStreaming(
 absl::StatusOr<Responses> ScoreCustomSampling(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const std::vector<absl::string_view>& target_text, float temperature,
-    litert::TensorBuffer decoded_ids, bool store_token_lengths = false);
+    litert::TensorBuffer decoded_ids, const litert::Environment& env,
+    bool store_token_lengths = false);
 }  // namespace litert::lm
 
 #endif  // THIRD_PARTY_ODML_LITERT_LM_RUNTIME_ENGINE_PIPELINE_H_

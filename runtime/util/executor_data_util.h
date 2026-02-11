@@ -20,6 +20,10 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "runtime/executor/llm_executor_io_types.h"
 
+namespace litert {
+class Environment;
+}  // namespace litert
+
 namespace litert::lm {
 
 // Util function for combining multiple ExecutorVisionData into a single
@@ -46,7 +50,7 @@ namespace litert::lm {
 // [batch_size, dim1, num_token_1 + num_token_2 + ... + num_token_n,
 // feature_dim].
 absl::StatusOr<ExecutorVisionData> CombineExecutorVisionData(
-    std::vector<ExecutorVisionData>& executor_data);
+    std::vector<ExecutorVisionData>& executor_data, const Environment& env);
 
 // Util function for combining multiple ExecutorAudioData into a single
 // ExecutorAudioData, by concatenating the audio embeddings in a single tensor
@@ -61,7 +65,7 @@ absl::StatusOr<ExecutorVisionData> CombineExecutorVisionData(
 // The output ExecutorAudioData will have TensorBuffer with shape,
 // [batch_size, num_token_1 + num_token_2 + ... + num_token_n, feature_dim].
 absl::StatusOr<ExecutorAudioData> CombineExecutorAudioData(
-    std::vector<ExecutorAudioData>& executor_data);
+    std::vector<ExecutorAudioData>& executor_data, const Environment& env);
 
 }  // namespace litert::lm
 

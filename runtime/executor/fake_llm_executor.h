@@ -29,6 +29,10 @@
 #include "runtime/executor/llm_executor_processed_tokens.h"
 #include "runtime/executor/llm_executor_settings.h"
 
+namespace litert {
+class Environment;
+}
+
 namespace litert::lm {
 
 // Fake LLM executor for testing.
@@ -54,7 +58,8 @@ class FakeLlmExecutor : public LlmExecutor {
       int vocab_size, const std::vector<std::vector<int>>& prefill_tokens_set,
       const std::vector<std::vector<int>>& decode_tokens_set,
       int batch_size = 1,
-      std::optional<std::vector<float>> audio_embedding = std::nullopt);
+      std::optional<std::vector<float>> audio_embedding = std::nullopt,
+      const litert::Environment* env = nullptr);
 
   absl::Status Prefill(const ExecutorInputs& inputs) override;
   absl::Status Prefill(const ExecutorInputs& inputs,
@@ -146,6 +151,7 @@ class FakeLlmExecutor : public LlmExecutor {
     kDecode,
   };
   LastOp last_op_ = LastOp::kNone;
+  const litert::Environment* env_ = nullptr;
 };
 
 }  // namespace litert::lm

@@ -143,7 +143,8 @@ class EngineImpl : public Engine {
   }
 
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
-      EngineSettings engine_settings, absl::string_view input_prompt_as_hint);
+      EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+      std::unique_ptr<Environment> env);
 
   EngineImpl(EngineSettings engine_settings,
              std::unique_ptr<ModelResources> litert_model_resources,
@@ -151,7 +152,8 @@ class EngineImpl : public Engine {
              std::unique_ptr<VisionExecutor> vision_executor,
              std::unique_ptr<AudioExecutor> audio_executor,
              std::optional<BenchmarkInfo> benchmark_info,
-             std::unique_ptr<ThreadPool> worker_thread_pool)
+             std::unique_ptr<ThreadPool> worker_thread_pool,
+             std::unique_ptr<Environment> owned_env, Environment* env)
       : engine_settings_(std::move(engine_settings)),
         litert_model_resources_(std::move(litert_model_resources)),
         executor_(std::move(executor)),
@@ -160,7 +162,9 @@ class EngineImpl : public Engine {
         stop_token_ids_(),
         sampler_params_(),
         benchmark_info_(std::move(benchmark_info)),
-        worker_thread_pool_(std::move(worker_thread_pool)) {}
+        worker_thread_pool_(std::move(worker_thread_pool)),
+        owned_env_(std::move(owned_env)),
+        env_(env) {}
   // Method to create the Session.
   absl::StatusOr<std::unique_ptr<Session>> CreateSession(
       const SessionConfig& session_config) override {
@@ -186,7 +190,7 @@ class EngineImpl : public Engine {
                                /*vision_executor=*/vision_executor_.get(),
                                /*audio_executor=*/audio_executor_.get(), config,
                                std::move(session_benchmark_info),
-                               worker_thread_pool_.get()));
+                               worker_thread_pool_.get(), *env_));
     if (benchmark_info_.has_value()) {
       auto session_benchmark_info_or = session->GetMutableBenchmarkInfo();
       if (session_benchmark_info_or.ok()) {
@@ -203,6 +207,8 @@ class EngineImpl : public Engine {
   const EngineSettings& GetEngineSettings() const override {
     return engine_settings_;
   }
+
+  const litert::Environment& GetEnvironment() const override { return *env_; }
 
  private:
   // Stored engine settings.
@@ -224,11 +230,15 @@ class EngineImpl : public Engine {
 
   // Thread pool for the engine to execute the works.
   std::unique_ptr<ThreadPool> worker_thread_pool_;
+  // The environment used for the engine.
+  std::unique_ptr<Environment> owned_env_;
+  Environment* env_;
 };
 
 // Method to create Engine.
 absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
-    EngineSettings engine_settings, absl::string_view input_prompt_as_hint) {
+    EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+    std::unique_ptr<Environment> env) {
   std::optional<BenchmarkInfo> benchmark_info =
       engine_settings.IsBenchmarkEnabled()
           ? std::make_optional<BenchmarkInfo>(
@@ -283,16 +293,24 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
         BenchmarkInfo::InitPhase::kExecutor));
   }
   std::unique_ptr<LlmExecutor> executor;
-  ASSIGN_OR_RETURN(auto& env,
-                   GetEnvironment(engine_settings, *model_resources));
+
+  Environment* effective_env = nullptr;
+  if (env == nullptr) {
+    ASSIGN_OR_RETURN(auto& singleton_env,
+                     GetEnvironment(engine_settings, *model_resources));
+    effective_env = &singleton_env;
+  } else {
+    effective_env = env.get();
+  }
+
   const auto& main_executor_settings =
       engine_settings.GetMainExecutorSettings();
 
   switch (main_executor_settings.GetBackend()) {
     default: {
-      ASSIGN_OR_RETURN(executor,
-                       CreateLlmLiteRtCompiledModelExecutor(
-                           main_executor_settings, env, *model_resources));
+      ASSIGN_OR_RETURN(executor, CreateLlmLiteRtCompiledModelExecutor(
+                                     main_executor_settings, *effective_env,
+                                     *model_resources));
     }
   };
 
@@ -303,15 +321,16 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
     ASSIGN_OR_RETURN(
         vision_executor,
         VisionLiteRtCompiledModelExecutor::Create(
-            engine_settings.GetMutableVisionExecutorSettings().value(), env));
+            engine_settings.GetMutableVisionExecutorSettings().value(),
+            *effective_env));
   }
 
   std::unique_ptr<AudioExecutor> audio_executor;
   if (engine_settings.GetAudioExecutorSettings().has_value()) {
-    ASSIGN_OR_RETURN(
-        audio_executor,
-        AudioLiteRtCompiledModelExecutor::Create(
-            engine_settings.GetAudioExecutorSettings().value(), env));
+    ASSIGN_OR_RETURN(audio_executor,
+                     AudioLiteRtCompiledModelExecutor::Create(
+                         engine_settings.GetAudioExecutorSettings().value(),
+                         *effective_env));
   }
 
   if (benchmark_info.has_value()) {
@@ -327,16 +346,18 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
       std::move(engine_settings), std::move(model_resources),
       std::move(executor), std::move(vision_executor),
       std::move(audio_executor), std::move(benchmark_info),
-      std::move(worker_thread_pool));
+      std::move(worker_thread_pool), std::move(env), effective_env);
 
   return llm_impl;
 };
 
 LITERT_LM_REGISTER_ENGINE(EngineFactory::EngineType::kLiteRTCompiledModel,
                           [](EngineSettings settings,
-                             absl::string_view input_prompt_as_hint) {
+                             absl::string_view input_prompt_as_hint,
+                             std::unique_ptr<Environment> env) {
                             return EngineImpl::Create(std::move(settings),
-                                                      input_prompt_as_hint);
+                                                      input_prompt_as_hint,
+                                                      std::move(env));
                           });
 }  // namespace
 }  // namespace litert::lm

@@ -30,6 +30,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "nlohmann/json_fwd.hpp"  // from @nlohmann_json
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "runtime/components/constrained_decoding/constraint.h"
 #include "runtime/components/constrained_decoding/gemma_model_constraint_provider.h"
@@ -115,7 +116,8 @@ absl::StatusOr<std::string> FormatToolResponse(
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<Gemma3DataProcessor>>
-Gemma3DataProcessor::Create(Gemma3DataProcessorConfig config,
+Gemma3DataProcessor::Create(const litert::Environment& env,
+                            Gemma3DataProcessorConfig config,
                             std::optional<Preface> preface,
                             const Tokenizer* tokenizer,
                             const std::vector<std::vector<int>>& stop_token_ids,
@@ -155,10 +157,11 @@ Gemma3DataProcessor::Create(Gemma3DataProcessorConfig config,
   }
   ASSIGN_OR_RETURN(auto audio_preprocessor,
                    AudioPreprocessorMiniAudio::Create(
-                       AudioPreprocessorConfig::CreateDefaultUsmConfig()));
-  return absl::WrapUnique(new Gemma3DataProcessor(
-      std::move(constraint_provider), config, preface,
-      std::make_unique<StbImagePreprocessor>(), std::move(audio_preprocessor)));
+                       AudioPreprocessorConfig::CreateDefaultUsmConfig(), env));
+  return absl::WrapUnique(
+      new Gemma3DataProcessor(std::move(constraint_provider), config, preface,
+                              std::make_unique<StbImagePreprocessor>(env),
+                              std::move(audio_preprocessor)));
 }
 
 absl::StatusOr<ordered_json> Gemma3DataProcessor::MessageToTemplateInput(

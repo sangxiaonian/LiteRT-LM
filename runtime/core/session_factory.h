@@ -42,7 +42,7 @@ absl::StatusOr<std::unique_ptr<Engine::Session>> InitializeSessionBasic(
     VisionExecutor* vision_executor, AudioExecutor* audio_executor,
     const SessionConfig& session_config,
     std::optional<BenchmarkInfo> benchmark_info,
-    ThreadPool* absl_nonnull worker_thread_pool);
+    ThreadPool* absl_nonnull worker_thread_pool, const Environment& env);
 
 }  // namespace litert::lm
 

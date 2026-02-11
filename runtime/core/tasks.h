@@ -23,6 +23,7 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/constrained_decoding/constraint.h"
 #include "runtime/components/sampler.h"
@@ -45,13 +46,14 @@ absl::StatusOr<Responses> Decode(
     std::optional<Sampler*> sampler, Constraint* constraint,
     std::optional<litert::TensorBuffer> decoded_ids,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)>& callback,
-    std::atomic<bool>* cancelled,
+    std::atomic<bool>* cancelled, const litert::Environment& env,
     int max_output_tokens = std::numeric_limits<int>::max());
 
 absl::StatusOr<Responses> Score(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const std::vector<absl::string_view>& target_texts, float temperature,
-    litert::TensorBuffer decoded_ids, bool store_token_lengths = false);
+    litert::TensorBuffer decoded_ids, const litert::Environment& env,
+    bool store_token_lengths = false);
 
 }  // namespace litert::lm::Tasks
 

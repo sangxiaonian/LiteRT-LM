@@ -68,7 +68,8 @@ class EngineAdvancedLegacyImpl : public Engine {
   ~EngineAdvancedLegacyImpl() override;
 
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
-      EngineSettings engine_settings, absl::string_view input_prompt_as_hint);
+      EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+      std::unique_ptr<Environment> env);
 
   absl::StatusOr<std::unique_ptr<Session>> CreateSession(
       const SessionConfig& session_config) override;
@@ -77,6 +78,8 @@ class EngineAdvancedLegacyImpl : public Engine {
 
   const EngineSettings& GetEngineSettings() const override;
 
+  const litert::Environment& GetEnvironment() const override { return *env_; }
+
  private:
   explicit EngineAdvancedLegacyImpl(
       EngineSettings engine_settings,
@@ -84,7 +87,8 @@ class EngineAdvancedLegacyImpl : public Engine {
       std::unique_ptr<ExecutionManager> execution_manager,
       Tokenizer* absl_nonnull tokenizer,
       std::unique_ptr<Tokenizer> task_tokenizer,
-      std::optional<BenchmarkInfo> benchmark_info);
+      std::optional<BenchmarkInfo> benchmark_info,
+      std::shared_ptr<Environment> env);
 
   EngineSettings engine_settings_;
   std::unique_ptr<odml::infra::ExecutorModelResources> model_resources_;
@@ -92,6 +96,7 @@ class EngineAdvancedLegacyImpl : public Engine {
   Tokenizer* tokenizer_;
   std::unique_ptr<Tokenizer> task_tokenizer_;
   std::optional<BenchmarkInfo> benchmark_info_;
+  std::shared_ptr<Environment> env_;
 };
 
 absl::StatusOr<std::unique_ptr<LlmExecutor>> BuildExecutor(
@@ -155,13 +160,15 @@ EngineAdvancedLegacyImpl::EngineAdvancedLegacyImpl(
     std::unique_ptr<ExecutionManager> execution_manager,
     Tokenizer* absl_nonnull tokenizer,
     std::unique_ptr<Tokenizer> task_tokenizer,
-    std::optional<BenchmarkInfo> benchmark_info)
+    std::optional<BenchmarkInfo> benchmark_info,
+    std::shared_ptr<Environment> env)
     : engine_settings_(std::move(engine_settings)),
       model_resources_(std::move(model_resources)),
       execution_manager_(std::move(execution_manager)),
       tokenizer_(std::move(tokenizer)),
       task_tokenizer_(std::move(task_tokenizer)),
-      benchmark_info_(std::move(benchmark_info)) {}
+      benchmark_info_(std::move(benchmark_info)),
+      env_(std::move(env)) {}
 
 // Method to create the Session.
 absl::StatusOr<std::unique_ptr<Engine::Session>>
@@ -189,7 +196,8 @@ const EngineSettings& EngineAdvancedLegacyImpl::GetEngineSettings() const {
 
 // Method to create Engine.
 absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedLegacyImpl::Create(
-    EngineSettings engine_settings, absl::string_view input_prompt_as_hint) {
+    EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+    std::unique_ptr<Environment> env) {
   ABSL_LOG(INFO) << "Constructing legacy EngineImpl...";
   std::optional<BenchmarkInfo> benchmark_info;
   if (engine_settings.IsBenchmarkEnabled()) {
@@ -245,7 +253,16 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedLegacyImpl::Create(
   ASSIGN_OR_RETURN(auto executor,
                    BuildExecutor(*model_resources, engine_settings));
 
-  ASSIGN_OR_RETURN(auto& litert_env, GetEnvironment());
+  std::shared_ptr<Environment> shared_env;
+  if (env == nullptr) {
+    ASSIGN_OR_RETURN(auto& singleton_env, GetEnvironment());
+    // TODO: b/394336021 - Avoid sharing the ownership of
+    // Environment.
+    shared_env = std::shared_ptr<Environment>(
+        &singleton_env, [](Environment*) { /* do nothing deleter */ });
+  } else {
+    shared_env = std::move(env);
+  }
 
   std::unique_ptr<VisionExecutorSettings> vision_executor_settings_ptr;
   if (engine_settings.GetVisionExecutorSettings().has_value()) {
@@ -294,20 +311,22 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedLegacyImpl::Create(
       ExecutionManager::Create(
           tokenizer, model_resources->litert_lm_model_resources.get(),
           std::move(executor), std::move(vision_executor_settings_ptr),
-          std::move(audio_executor_settings_ptr), &litert_env));
+          std::move(audio_executor_settings_ptr), shared_env.get()));
 
   auto llm_impl = absl::WrapUnique(new EngineAdvancedLegacyImpl(
       std::move(engine_settings), std::move(model_resources),
       std::move(execution_manager), std::move(tokenizer),
-      std::move(task_tokenizer), std::move(benchmark_info)));
+      std::move(task_tokenizer), std::move(benchmark_info), shared_env));
   return llm_impl;
 };
 
 LITERT_LM_REGISTER_ENGINE(EngineFactory::EngineType::kAdvancedLegacyTfLite,
                           [](EngineSettings settings,
-                             absl::string_view input_prompt_as_hint) {
+                             absl::string_view input_prompt_as_hint,
+                             std::unique_ptr<Environment> env) {
                             return EngineAdvancedLegacyImpl::Create(
-                                std::move(settings), input_prompt_as_hint);
+                                std::move(settings), input_prompt_as_hint,
+                                std::move(env));
                           });
 }  // namespace
 }  // namespace litert::lm

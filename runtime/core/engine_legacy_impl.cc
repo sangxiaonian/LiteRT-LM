@@ -119,7 +119,7 @@ absl::StatusOr<std::unique_ptr<LlmExecutor>> BuildExecutor(
 // with the provided settings. This ensure we maintain the same LiteRT
 // environment during the whole application lifetime. This is required for GPU
 // LiteRT environment. See b/454383477 for more details.
-absl::StatusOr<Environment&> GetEnvironment() {
+absl::StatusOr<Environment&> GetSingletonEnvironment() {
   static absl::NoDestructor<absl::StatusOr<Environment>> kEnvironment(
       [&]() -> absl::StatusOr<Environment> {
         LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
@@ -138,7 +138,8 @@ class EngineImpl : public Engine {
   }
 
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
-      EngineSettings engine_settings, absl::string_view input_prompt_as_hint);
+      EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+      std::unique_ptr<Environment> env);
 
   // Constructor for EngineImpl.
   //
@@ -161,7 +162,8 @@ class EngineImpl : public Engine {
              std::unique_ptr<VisionExecutor> vision_executor,
              std::unique_ptr<AudioExecutor> audio_executor,
              std::optional<BenchmarkInfo> benchmark_info,
-             std::unique_ptr<ThreadPool> worker_thread_pool)
+             std::unique_ptr<ThreadPool> worker_thread_pool,
+             std::shared_ptr<Environment> env)
       : engine_settings_(std::move(engine_settings)),
         model_resources_(std::move(model_resources)),
         executor_(std::move(executor)),
@@ -171,7 +173,8 @@ class EngineImpl : public Engine {
         audio_executor_(std::move(audio_executor)),
         stop_token_ids_(),
         benchmark_info_(std::move(benchmark_info)),
-        worker_thread_pool_(std::move(worker_thread_pool)) {}
+        worker_thread_pool_(std::move(worker_thread_pool)),
+        env_(std::move(env)) {}
 
   // Method to create the Session.
   absl::StatusOr<std::unique_ptr<Session>> CreateSession(
@@ -186,7 +189,7 @@ class EngineImpl : public Engine {
     return InitializeSessionBasic(executor_.get(), tokenizer_,
                                   vision_executor_.get(), audio_executor_.get(),
                                   config, benchmark_info_,
-                                  worker_thread_pool_.get());
+                                  worker_thread_pool_.get(), *env_);
   }
 
   absl::Status WaitUntilDone(absl::Duration timeout) override {
@@ -196,6 +199,8 @@ class EngineImpl : public Engine {
   const EngineSettings& GetEngineSettings() const override {
     return engine_settings_;
   }
+
+  const litert::Environment& GetEnvironment() const override { return *env_; }
 
  private:
   // Stored engine settings.
@@ -230,11 +235,13 @@ class EngineImpl : public Engine {
 
   // Thread pool for the engine to execute the works.
   std::unique_ptr<ThreadPool> worker_thread_pool_;
+  std::shared_ptr<Environment> env_;
 };
 
 // Method to create Engine.
 absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
-    EngineSettings engine_settings, absl::string_view input_prompt_as_hint) {
+    EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+    std::unique_ptr<Environment> env) {
   ABSL_LOG(INFO) << "Constructing legacy EngineImpl...";
   std::optional<BenchmarkInfo> benchmark_info;
   if (engine_settings.IsBenchmarkEnabled()) {
@@ -290,7 +297,16 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
   ASSIGN_OR_RETURN(auto executor,
                    BuildExecutor(*model_resources, engine_settings));
 
-  ASSIGN_OR_RETURN(auto& lrt_env, GetEnvironment());
+  std::shared_ptr<Environment> shared_env;
+  if (env == nullptr) {
+    ASSIGN_OR_RETURN(auto& singleton_env, GetSingletonEnvironment());
+    // TODO: b/394336021 - Avoid sharing the ownership of
+    // Environment.
+    shared_env = std::shared_ptr<Environment>(
+        &singleton_env, [](Environment*) { /* do nothing deleter */ });
+  } else {
+    shared_env = std::move(env);
+  }
 
   std::unique_ptr<VisionExecutor> vision_executor;
   if (engine_settings.GetVisionExecutorSettings().has_value()) {
@@ -301,8 +317,9 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
             /*encoder_backend=*/
             engine_settings.GetVisionExecutorSettings()->GetBackend(),
             /*adapter_backend=*/Backend::CPU));
-    ASSIGN_OR_RETURN(vision_executor, VisionLiteRtCompiledModelExecutor::Create(
-                                          vision_executor_settings, lrt_env));
+    ASSIGN_OR_RETURN(vision_executor,
+                     VisionLiteRtCompiledModelExecutor::Create(
+                         vision_executor_settings, *shared_env));
   }
 
   std::unique_ptr<AudioExecutor> audio_executor;
@@ -339,8 +356,9 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
           "GPU_ARTISAN backend is not supported on this platform.");
 #endif  // !defined(LITERTLM_CPU_ONLY)
     } else {
-      ASSIGN_OR_RETURN(audio_executor, AudioLiteRtCompiledModelExecutor::Create(
-                                           audio_executor_settings, lrt_env));
+      ASSIGN_OR_RETURN(audio_executor,
+                       AudioLiteRtCompiledModelExecutor::Create(
+                           audio_executor_settings, *shared_env));
     }
   }
 
@@ -367,15 +385,17 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
       std::move(engine_settings), std::move(model_resources),
       std::move(executor), std::move(task_tokenizer), tokenizer,
       std::move(vision_executor), std::move(audio_executor),
-      std::move(benchmark_info), std::move(worker_thread_pool));
+      std::move(benchmark_info), std::move(worker_thread_pool), shared_env);
   return llm_impl;
 };
 
 LITERT_LM_REGISTER_ENGINE(EngineFactory::EngineType::kLegacyTfLite,
                           [](EngineSettings settings,
-                             absl::string_view input_prompt_as_hint) {
+                             absl::string_view input_prompt_as_hint,
+                             std::unique_ptr<Environment> env) {
                             return EngineImpl::Create(std::move(settings),
-                                                      input_prompt_as_hint);
+                                                      input_prompt_as_hint,
+                                                      std::move(env));
                           });
 
 }  // namespace

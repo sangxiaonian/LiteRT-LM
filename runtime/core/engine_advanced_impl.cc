@@ -143,16 +143,19 @@ class EngineAdvancedImpl : public Engine {
   }
 
   static absl::StatusOr<std::unique_ptr<Engine>> Create(
-      EngineSettings engine_settings, absl::string_view input_prompt_as_hint);
+      EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+      std::unique_ptr<Environment> env);
 
   EngineAdvancedImpl(EngineSettings engine_settings,
                      std::unique_ptr<ModelResources> litert_model_resources,
                      std::unique_ptr<ExecutionManager> execution_manager,
-                     std::optional<BenchmarkInfo> benchmark_info)
+                     std::optional<BenchmarkInfo> benchmark_info,
+                     std::shared_ptr<Environment> env)
       : engine_settings_(std::move(engine_settings)),
         litert_model_resources_(std::move(litert_model_resources)),
         execution_manager_(std::move(execution_manager)),
-        benchmark_info_(std::move(benchmark_info)) {}
+        benchmark_info_(std::move(benchmark_info)),
+        env_(std::move(env)) {}
 
   // Method to create the Session.
   absl::StatusOr<std::unique_ptr<Session>> CreateSession(
@@ -203,6 +206,8 @@ class EngineAdvancedImpl : public Engine {
     return engine_settings_;
   }
 
+  const litert::Environment& GetEnvironment() const override { return *env_; }
+
  private:
   // Stored engine settings.
   EngineSettings engine_settings_;
@@ -215,11 +220,13 @@ class EngineAdvancedImpl : public Engine {
 
   // Benchmark info for the engine.
   std::optional<BenchmarkInfo> benchmark_info_;
+  std::shared_ptr<Environment> env_;
 };
 
 // Method to create Engine.
 absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
-    EngineSettings engine_settings, absl::string_view input_prompt_as_hint) {
+    EngineSettings engine_settings, absl::string_view input_prompt_as_hint,
+    std::unique_ptr<Environment> env) {
   std::optional<BenchmarkInfo> benchmark_info =
       engine_settings.IsBenchmarkEnabled()
           ? std::make_optional<BenchmarkInfo>(
@@ -274,8 +281,17 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
         BenchmarkInfo::InitPhase::kExecutor));
   }
 
-  ASSIGN_OR_RETURN(auto& litert_env,
-                   GetEnvironment(engine_settings, *model_resources));
+  std::shared_ptr<Environment> shared_env;
+  if (env == nullptr) {
+    ASSIGN_OR_RETURN(auto& singleton_env,
+                     GetEnvironment(engine_settings, *model_resources));
+    // TODO: b/394336021 - Avoid sharing the ownership of
+    // Environment.
+    shared_env = std::shared_ptr<Environment>(
+        &singleton_env, [](Environment*) { /* do nothing deleter */ });
+  } else {
+    shared_env = std::move(env);
+  }
 
   std::unique_ptr<LlmExecutor> executor;
   const auto& main_executor_settings =
@@ -285,7 +301,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
     default: {
       ASSIGN_OR_RETURN(
           executor, CreateLlmLiteRtCompiledModelExecutor(
-                        main_executor_settings, litert_env, *model_resources));
+                        main_executor_settings, *shared_env, *model_resources));
     }
   };
 
@@ -316,11 +332,17 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
         std::move(audio_executor_settings));
   }
 
-  ASSIGN_OR_RETURN(auto execution_manager,
-                   ExecutionManager::Create(
-                       tokenizer, model_resources.get(), std::move(executor),
-                       std::move(vision_executor_settings_ptr),
-                       std::move(audio_executor_settings_ptr), &litert_env));
+  ASSIGN_OR_RETURN(
+      auto execution_manager,
+      ExecutionManager::Create(
+          tokenizer, model_resources.get(), std::move(executor),
+          std::move(vision_executor_settings_ptr),
+          std::move(audio_executor_settings_ptr), shared_env.get()));
+  // Note: ExecutionManager currently takes raw pointer to env, but seems to not
+  // own it? Let's assume ExecutionManager stores raw pointer or we might need
+  // to update it to store shared_ptr if it needs to keep it alive. Wait, I
+  // should check ExecutionManager again. Assuming ExecutionManager::Create
+  // signature takes Environment*.
 
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(
@@ -329,16 +351,17 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
 
   auto llm_impl = std::make_unique<EngineAdvancedImpl>(
       std::move(engine_settings), std::move(model_resources),
-      std::move(execution_manager), std::move(benchmark_info));
+      std::move(execution_manager), std::move(benchmark_info), shared_env);
 
   return llm_impl;
 };
 
 LITERT_LM_REGISTER_ENGINE(
     EngineFactory::EngineType::kAdvancedLiteRTCompiledModel,
-    [](EngineSettings settings, absl::string_view input_prompt_as_hint) {
+    [](EngineSettings settings, absl::string_view input_prompt_as_hint,
+       std::unique_ptr<Environment> env) {
       return EngineAdvancedImpl::Create(std::move(settings),
-                                        input_prompt_as_hint);
+                                        input_prompt_as_hint, std::move(env));
     });
 
 }  // namespace litert::lm

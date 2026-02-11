@@ -23,6 +23,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "runtime/components/sentencepiece_tokenizer.h"
 #include "runtime/components/tokenizer.h"
 #include "runtime/conversation/io_types.h"
@@ -54,9 +55,13 @@ class ModelDataProcessorFactoryTest : public ::testing::Test {
             .string());
     ASSERT_OK(tokenizer);
     tokenizer_ = std::move(*tokenizer);
+    auto env = Environment::Create({});
+    ASSERT_TRUE(env.HasValue());
+    env_ = std::move(*env);
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
+  std::unique_ptr<Environment> env_;
 };
 
 TEST_F(ModelDataProcessorFactoryTest, CreateGenericModelDataProcessor) {
@@ -65,7 +70,7 @@ TEST_F(ModelDataProcessorFactoryTest, CreateGenericModelDataProcessor) {
   ASSERT_OK_AND_ASSIGN(
       auto config, CreateDataProcessorConfigFromLlmModelType(llm_model_type));
   ASSERT_TRUE(std::holds_alternative<GenericDataProcessorConfig>(config));
-  ASSERT_OK_AND_ASSIGN(auto processor, CreateModelDataProcessor(config));
+  ASSERT_OK_AND_ASSIGN(auto processor, CreateModelDataProcessor(*env_, config));
   EXPECT_OK(processor->ToInputDataVector("test prompt", {},
                                          GenericDataProcessorArguments()));
   EXPECT_THAT(processor->ToInputDataVector("test prompt", {},
@@ -90,7 +95,7 @@ TEST_F(ModelDataProcessorFactoryTest, CreateGemma3DataProcessor) {
   ASSERT_OK_AND_ASSIGN(
       auto processor,
       CreateModelDataProcessor(
-          config,
+          *env_, config,
           JsonPreface{
               .messages = {{{"role", "system"},
                             {"content", "You are a helpful assistant."}}}}));
@@ -111,7 +116,7 @@ TEST_F(ModelDataProcessorFactoryTest, CreateGemma3DataProcessor) {
   ASSERT_OK_AND_ASSIGN(
       config, CreateDataProcessorConfigFromLlmModelType(llm_model_type));
   ASSERT_TRUE(std::holds_alternative<Gemma3DataProcessorConfig>(config));
-  ASSERT_OK_AND_ASSIGN(processor, CreateModelDataProcessor(config));
+  ASSERT_OK_AND_ASSIGN(processor, CreateModelDataProcessor(*env_, config));
   EXPECT_OK(processor->ToInputDataVector("test prompt", {},
                                          Gemma3DataProcessorArguments()));
 }
@@ -131,7 +136,7 @@ TEST_F(ModelDataProcessorFactoryTest,
   ASSERT_TRUE(std::holds_alternative<Gemma3DataProcessorConfig>(config));
   ASSERT_OK_AND_ASSIGN(
       auto processor,
-      CreateModelDataProcessor(config, /*preface=*/std::nullopt,
+      CreateModelDataProcessor(*env_, config, /*preface=*/std::nullopt,
                                (*tokenizer).get(), {},
                                /*enable_constrained_decoding=*/true));
   EXPECT_OK(processor->ToInputDataVector("test prompt", {},
@@ -144,7 +149,7 @@ TEST_F(ModelDataProcessorFactoryTest, CreateQwen3ModelDataProcessor) {
   ASSERT_OK_AND_ASSIGN(
       auto config, CreateDataProcessorConfigFromLlmModelType(llm_model_type));
   ASSERT_TRUE(std::holds_alternative<Qwen3DataProcessorConfig>(config));
-  ASSERT_OK_AND_ASSIGN(auto processor, CreateModelDataProcessor(config));
+  ASSERT_OK_AND_ASSIGN(auto processor, CreateModelDataProcessor(*env_, config));
   EXPECT_OK(processor->ToInputDataVector("test prompt", {},
                                          Qwen3DataProcessorArguments()));
   EXPECT_THAT(processor->ToInputDataVector("test prompt", {},
@@ -174,7 +179,7 @@ TEST_F(ModelDataProcessorFactoryTest, CreateFunctionGemmaDataProcessor) {
   ASSERT_TRUE(std::holds_alternative<FunctionGemmaDataProcessorConfig>(config));
   ASSERT_OK_AND_ASSIGN(
       auto processor,
-      CreateModelDataProcessor(config, /*preface=*/std::nullopt,
+      CreateModelDataProcessor(*env_, config, /*preface=*/std::nullopt,
                                (*tokenizer).get(), /*stop_token_ids=*/{},
                                /*enable_constrained_decoding=*/true));
   EXPECT_OK(processor->ToInputDataVector(

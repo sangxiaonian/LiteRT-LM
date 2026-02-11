@@ -44,7 +44,8 @@ absl::StatusOr<std::string> MaybeGetBosString(
 
 absl::StatusOr<InputText> StringToProcessedInputText(
     absl::string_view text, const SessionConfig& session_config,
-    Tokenizer& tokenizer, const std::optional<BenchmarkInfo>& benchmark_info) {
+    Tokenizer& tokenizer, const Environment& env,
+    const std::optional<BenchmarkInfo>& benchmark_info) {
   auto bos_token_id = session_config.GetStartTokenId();
   std::string bos_string = "";
   if (bos_token_id >= 0) {
@@ -69,7 +70,7 @@ absl::StatusOr<InputText> StringToProcessedInputText(
   } else if (bos_token_found) {
     ids.insert(ids.begin(), session_config.GetStartTokenId());
   }
-  ASSIGN_OR_RETURN(auto ids_buffer, tokenizer.TokenIdsToTensorBuffer(ids));
+  ASSIGN_OR_RETURN(auto ids_buffer, tokenizer.TokenIdsToTensorBuffer(ids, env));
   return InputText(std::move(ids_buffer));
 }
 
@@ -159,7 +160,8 @@ absl::StatusOr<std::vector<InputData>> ApplyPromptTemplates(
 
 absl::StatusOr<std::vector<InputData>> PreprocessContents(
     const std::vector<InputData>& contents, const SessionConfig& session_config,
-    Tokenizer& tokenizer, const std::optional<BenchmarkInfo>& benchmark_info) {
+    Tokenizer& tokenizer, const Environment& env,
+    const std::optional<BenchmarkInfo>& benchmark_info) {
   std::vector<InputData> preprocessed_contents;
   for (int i = 0; i < contents.size(); ++i) {
     const auto& content = contents[i];
@@ -177,7 +179,7 @@ absl::StatusOr<std::vector<InputData>> PreprocessContents(
         ASSIGN_OR_RETURN(
             auto processed_input_text,
             StringToProcessedInputText(templated_text, session_config,
-                                       tokenizer, benchmark_info));
+                                       tokenizer, env, benchmark_info));
         preprocessed_contents.emplace_back(std::move(processed_input_text));
       }
     } else if (const auto* input_image = std::get_if<InputImage>(&content)) {

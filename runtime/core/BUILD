@@ -163,6 +163,7 @@ cc_library(
             "@litert//litert/cc:litert_api_with_dynamic_runtime",
         ],
         "//conditions:default": [
+            "@litert//litert/cc:litert_environment",
             "@litert//litert/cc:litert_macros",
             "@litert//litert/cc:litert_tensor_buffer",
         ],
@@ -245,6 +246,7 @@ cc_library(
             "@litert//litert/cc:litert_api_with_dynamic_runtime",
         ],
         "//conditions:default": [
+            "@litert//litert/cc:litert_environment",
             "@litert//litert/cc:litert_model",
             "@litert//litert/cc:litert_tensor_buffer",
         ],
@@ -346,6 +348,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_environment",
         "@litert//litert/cc/internal:litert_detail",
         "//runtime/components:tokenizer",
         "//runtime/engine:engine_settings",
@@ -414,6 +417,7 @@ cc_library(
             "@litert//litert/cc:litert_api_with_dynamic_runtime",
         ],
         "//conditions:default": [
+            "@litert//litert/cc:litert_environment",
             "@litert//litert/cc:litert_macros",
             "@litert//litert/cc:litert_tensor_buffer",
         ],

@@ -27,6 +27,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/executor/executor_settings_base.h"
@@ -106,7 +107,8 @@ absl::Status CheckEquivalent(absl::Span<T> expected, absl::Span<T> actual) {
 FakeLlmExecutor::FakeLlmExecutor(
     int vocab_size, const std::vector<std::vector<int>>& prefill_tokens_set,
     const std::vector<std::vector<int>>& decode_tokens_set, int batch_size,
-    std::optional<std::vector<float>> audio_embedding)
+    std::optional<std::vector<float>> audio_embedding,
+    const litert::Environment* env)
     : vocab_size_(vocab_size),
       prefill_tokens_set_(prefill_tokens_set),
       decode_tokens_set_(decode_tokens_set),
@@ -117,7 +119,8 @@ FakeLlmExecutor::FakeLlmExecutor(
       executor_settings_(
           LlmExecutorSettings::CreateDefault(
               ModelAssets::Create("dummy_model_path").value(), Backend::CPU)
-              .value()) {
+              .value()),
+      env_(env) {
   // Set default testing max num tokens to 1024.
   executor_settings_.SetMaxNumTokens(1024);
   current_step_ = 0;
@@ -188,12 +191,17 @@ absl::Status FakeLlmExecutor::Decode(
         decode_times_));
   }
   if (decode_params.HasConstraintDecoder()) {
-    // If constraint decoder is set, we will decode logits and apply the mask
-    // from the constraint decoder to generate the final output tokens.
     auto constraint_decoder = decode_params.GetConstraintDecoder();
     // Get the last token ids from the last prefill or decode call.
+    const litert::Environment* env = env_;
+    std::optional<litert::Environment> temp_env;
+    if (!env) {
+      LITERT_ASSIGN_OR_RETURN(auto e, Environment::Create({}));
+      temp_env = std::move(e);
+      env = &*temp_env;
+    }
     LITERT_ASSIGN_OR_RETURN(auto last_token_ids,
-                            CreateTensorBuffer<int>({batch_size_, 1}));
+                            CreateTensorBuffer<int>({batch_size_, 1}, *env));
     auto last_token_ids_span = ReferTensorBufferAsSpan<int>(last_token_ids);
 
     if (last_op_ == LastOp::kDecode) {
@@ -211,7 +219,7 @@ absl::Status FakeLlmExecutor::Decode(
 
     LITERT_ASSIGN_OR_RETURN(
         auto output_logits,
-        CreateTensorBuffer<float>({batch_size_, 1, vocab_size_}));
+        CreateTensorBuffer<float>({batch_size_, 1, vocab_size_}, *env));
     DecodeIdsToLogits(decode_tokens_set_[decode_times_], vocab_size_,
                       output_logits);
     // Apply the mask from the constraint decoder to the logits.
@@ -263,9 +271,16 @@ absl::Status FakeLlmExecutor::Decode(const ExecutorInputs& inputs,
 
 absl::StatusOr<::litert::TensorBuffer> FakeLlmExecutor::DecodeLogits(
     const ExecutorInputs& inputs) {
+  const litert::Environment* env = env_;
+  std::optional<litert::Environment> temp_env;
+  if (!env) {
+    LITERT_ASSIGN_OR_RETURN(auto e, Environment::Create({}));
+    temp_env = std::move(e);
+    env = &*temp_env;
+  }
   LITERT_ASSIGN_OR_RETURN(
       auto output_logits,
-      CreateTensorBuffer<float>({batch_size_, 1, vocab_size_}));
+      CreateTensorBuffer<float>({batch_size_, 1, vocab_size_}, *env));
   RETURN_IF_ERROR(Decode(inputs, output_logits));
   return output_logits;
 }

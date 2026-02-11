@@ -24,6 +24,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/test/matchers.h"  // from @litert
@@ -42,9 +43,10 @@ TEST(ByPassAudioPreprocessorTest, PreprocessWithTensorBuffer) {
 
   // Create an InputAudio with a TensorBuffer.
   std::vector<float> input_data(1 * 10 * 128, 0.5f);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer input_tensor_buffer,
-      CopyToTensorBuffer<float>(input_data, {1, 10, 128}));
+      CopyToTensorBuffer<float>(input_data, {1, 10, 128}, env));
   InputAudio test_input_audio(std::move(input_tensor_buffer));
 
   // Call the Preprocess method.

@@ -399,11 +399,12 @@ struct MaybeWrappedTensorBuffer {
 
 template <typename T>
 absl::StatusOr<MaybeWrappedTensorBuffer> WrapOrCreateTensorBufferFromHostMemory(
-    RankedTensorType tensor_type, absl::Span<T> data) {
+    const ::litert::Environment& env, RankedTensorType tensor_type,
+    absl::Span<T> data) {
   size_t size = data.size() * sizeof(T);
   // First try to wrap the memory with a TensorBuffer.
-  auto wrapped_buffer =
-      TensorBuffer::CreateFromHostMemory(tensor_type, data.data(), size);
+  auto wrapped_buffer = ::litert::TensorBuffer::CreateFromHostMemory(
+      env, tensor_type, data.data(), size);
   if (wrapped_buffer.HasValue()) {
     return MaybeWrappedTensorBuffer{.buffer = std::move(*wrapped_buffer),
                                     .wrapped = true};
@@ -411,7 +412,8 @@ absl::StatusOr<MaybeWrappedTensorBuffer> WrapOrCreateTensorBufferFromHostMemory(
 
   LITERT_ASSIGN_OR_RETURN(
       auto new_buffer,
-      TensorBuffer::CreateManagedHostMemory(tensor_type, size));
+      ::litert::TensorBuffer::CreateManaged(
+          env, ::litert::TensorBufferType::kHostMemory, tensor_type, size));
   return MaybeWrappedTensorBuffer{.buffer = std::move(new_buffer),
                                   .wrapped = false};
 }
