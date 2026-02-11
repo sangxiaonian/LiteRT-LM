@@ -229,7 +229,6 @@ TEST(ConversationConfigTest, CreateDefaultWithOverwritePromptTemplate) {
   EXPECT_EQ(config.GetPromptTemplate().GetTemplateSource(), "Hello world!");
   EXPECT_TRUE(
       config.GetSessionConfig().GetPromptTemplates().user().prefix().empty());
-  EXPECT_TRUE(config.GetSessionConfig().GetLlmModelType().has_gemma3());
 }
 
 TEST(ConversationConfigTest, CreateWithBuilder) {

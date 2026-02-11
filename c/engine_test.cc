@@ -645,7 +645,7 @@ TEST(EngineCTest, ConversationSendMessage) {
 TEST(EngineCTest, ConversationSendMessageWithConfig) {
   // 1. Create an engine.
   const std::string task_path = GetTestdataPath(
-      "litert_lm/runtime/testdata/test_lm_new_metadata.task");
+      "litert_lm/runtime/testdata/test_lm.litertlm");
 
   EngineSettingsPtr settings(
       litert_lm_engine_settings_create(task_path.c_str(), "cpu",
