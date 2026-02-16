@@ -1836,6 +1836,7 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       LITERT_ASSIGN_OR_RETURN(auto output_buffer,
                               compiled_model.CreateOutputBuffer(
                                   kDecodeSignatureRunner, output_name));
+      LITERT_RETURN_IF_ERROR(output_buffer.Clear());
 
       decode_output_buffers[output_name] = std::move(output_buffer);
     }
