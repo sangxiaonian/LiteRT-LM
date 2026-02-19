@@ -19,6 +19,7 @@
 // being destroyed.
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -163,8 +164,8 @@ class ModelResources {
   virtual std::optional<std::string> GetTFLiteModelBackendConstraint(
       ModelType model_type) = 0;
 
-  // Returns the tokenizer.
-  virtual absl::StatusOr<Tokenizer*> GetTokenizer() = 0;
+  // Builds a tokenizer instance from the model and returns it.
+  virtual absl::StatusOr<std::unique_ptr<Tokenizer>> GetTokenizer() = 0;
 
   // Returns the llm metadata.
   virtual absl::StatusOr<const proto::LlmMetadata*> GetLlmMetadata() = 0;

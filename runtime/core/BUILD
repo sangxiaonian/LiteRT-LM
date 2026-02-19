@@ -55,6 +55,7 @@ ENGINE_IMPL_COMMON_DEPS = [
     "@com_google_absl//absl/time",
     "@litert//litert/cc:litert_macros",
     "//runtime/components:model_resources",
+    "//runtime/components:tokenizer",
     "//runtime/engine:engine_factory",
     "//runtime/engine:engine_interface",
     "//runtime/engine:engine_settings",

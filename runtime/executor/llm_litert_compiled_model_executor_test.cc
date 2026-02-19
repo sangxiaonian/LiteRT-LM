@@ -423,7 +423,7 @@ class TfLiteModelResources : public ModelResources {
     return absl::UnimplementedError("GetTFLiteModelBuffer not implemented.");
   }
 
-  absl::StatusOr<Tokenizer*> GetTokenizer() override {
+  absl::StatusOr<std::unique_ptr<Tokenizer>> GetTokenizer() override {
     return absl::UnimplementedError("GetTokenizer not implemented.");
   }
 

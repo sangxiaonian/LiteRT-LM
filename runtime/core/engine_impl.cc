@@ -32,6 +32,7 @@
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "runtime/components/model_resources.h"
+#include "runtime/components/tokenizer.h"
 #include "runtime/core/session_factory.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"
@@ -134,6 +135,7 @@ class EngineImpl : public Engine {
 
   EngineImpl(EngineSettings engine_settings,
              std::unique_ptr<ModelResources> litert_model_resources,
+             std::unique_ptr<Tokenizer> tokenizer,
              std::unique_ptr<LlmExecutor> executor,
              std::unique_ptr<VisionExecutor> vision_executor,
              std::unique_ptr<AudioExecutor> audio_executor,
@@ -141,6 +143,7 @@ class EngineImpl : public Engine {
              std::unique_ptr<ThreadPool> worker_thread_pool)
       : engine_settings_(std::move(engine_settings)),
         litert_model_resources_(std::move(litert_model_resources)),
+        tokenizer_(std::move(tokenizer)),
         executor_(std::move(executor)),
         vision_executor_(std::move(vision_executor)),
         audio_executor_(std::move(audio_executor)),
@@ -166,10 +169,9 @@ class EngineImpl : public Engine {
     RETURN_IF_ERROR(config.MaybeUpdateAndValidate(engine_settings_));
 
     ABSL_CHECK(litert_model_resources_ != nullptr);
-    ASSIGN_OR_RETURN(auto* tokenizer, litert_model_resources_->GetTokenizer());
     ASSIGN_OR_RETURN(
         auto session,
-        InitializeSessionBasic(executor_.get(), tokenizer,
+        InitializeSessionBasic(executor_.get(), tokenizer_.get(),
                                /*vision_executor=*/vision_executor_.get(),
                                /*audio_executor=*/audio_executor_.get(), config,
                                std::move(session_benchmark_info),
@@ -196,6 +198,8 @@ class EngineImpl : public Engine {
   EngineSettings engine_settings_;
   // Model resources, which must outlive `executor_`.
   std::unique_ptr<ModelResources> litert_model_resources_;
+  // Tokenizer shared by all sessions.
+  std::unique_ptr<Tokenizer> tokenizer_;
   // Shared executor for all sessions.
   std::unique_ptr<LlmExecutor> executor_;
   // Shared vision executor for all sessions.
@@ -239,7 +243,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
     RETURN_IF_ERROR(benchmark_info->TimeInitPhaseStart(
         BenchmarkInfo::InitPhase::kTokenizer));
   }
-  ASSIGN_OR_RETURN(auto* tokenizer, model_resources->GetTokenizer());
+  ASSIGN_OR_RETURN(std::unique_ptr<Tokenizer> tokenizer,
+                   model_resources->GetTokenizer());
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(
         benchmark_info->TimeInitPhaseEnd(BenchmarkInfo::InitPhase::kTokenizer));
@@ -312,7 +317,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
                                    /*max_num_threads=*/1);
   auto llm_impl = std::make_unique<EngineImpl>(
       std::move(engine_settings), std::move(model_resources),
-      std::move(executor), std::move(vision_executor),
+      std::move(tokenizer), std::move(executor), std::move(vision_executor),
       std::move(audio_executor), std::move(benchmark_info),
       std::move(worker_thread_pool));
 

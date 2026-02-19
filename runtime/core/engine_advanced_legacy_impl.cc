@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
-#include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/check.h"  // from @com_google_absl
@@ -86,15 +85,13 @@ class EngineAdvancedLegacyImpl : public Engine {
       EngineSettings engine_settings,
       std::unique_ptr<odml::infra::ExecutorModelResources> model_resources,
       std::unique_ptr<ExecutionManager> execution_manager,
-      Tokenizer* absl_nonnull tokenizer,
       std::unique_ptr<Tokenizer> task_tokenizer,
       std::optional<BenchmarkInfo> benchmark_info);
 
   EngineSettings engine_settings_;
   std::unique_ptr<odml::infra::ExecutorModelResources> model_resources_;
   std::shared_ptr<ExecutionManager> execution_manager_;
-  Tokenizer* tokenizer_;
-  std::unique_ptr<Tokenizer> task_tokenizer_;
+  std::unique_ptr<Tokenizer> tokenizer_;
   std::optional<BenchmarkInfo> benchmark_info_;
 };
 
@@ -230,14 +227,12 @@ EngineAdvancedLegacyImpl::EngineAdvancedLegacyImpl(
     EngineSettings engine_settings,
     std::unique_ptr<oi::ExecutorModelResources> model_resources,
     std::unique_ptr<ExecutionManager> execution_manager,
-    Tokenizer* absl_nonnull tokenizer,
-    std::unique_ptr<Tokenizer> task_tokenizer,
+    std::unique_ptr<Tokenizer> tokenizer,
     std::optional<BenchmarkInfo> benchmark_info)
     : engine_settings_(std::move(engine_settings)),
       model_resources_(std::move(model_resources)),
       execution_manager_(std::move(execution_manager)),
       tokenizer_(std::move(tokenizer)),
-      task_tokenizer_(std::move(task_tokenizer)),
       benchmark_info_(std::move(benchmark_info)) {}
 
 // Method to create the Session.
@@ -256,7 +251,7 @@ EngineAdvancedLegacyImpl::CreateSession(const SessionConfig& session_config) {
       return properties.status();
     }
   }
-  return InitializeSessionAdvanced(execution_manager_, tokenizer_, config,
+  return InitializeSessionAdvanced(execution_manager_, tokenizer_.get(), config,
                                    benchmark_info_, audio_executor_properties);
 }
 
@@ -288,8 +283,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedLegacyImpl::Create(
       oi::BuildModelResources(/*model_path=*/"", scoped_model_file));
 
   proto::LlmMetadata llm_metadata;
-  std::unique_ptr<Tokenizer> task_tokenizer;
-  Tokenizer* tokenizer = nullptr;
+  std::unique_ptr<Tokenizer> tokenizer;
   if (model_resources->litert_lm_model_resources == nullptr) {
     // Handle the .task file format.
     ASSIGN_OR_RETURN(auto resources, ModelAssetBundleResources::Create(
@@ -301,7 +295,6 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedLegacyImpl::Create(
     ASSIGN_OR_RETURN(auto vocab_buffer, resources->GetFile("TOKENIZER_MODEL"));
     ASSIGN_OR_RETURN(task_tokenizer,
                      SentencePieceTokenizer::CreateFromBuffer(vocab_buffer));
-    tokenizer = task_tokenizer.get();
     if (benchmark_info.has_value()) {
       RETURN_IF_ERROR(benchmark_info->TimeInitPhaseEnd(
           BenchmarkInfo::InitPhase::kTokenizer));
@@ -384,14 +377,14 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedLegacyImpl::Create(
   ASSIGN_OR_RETURN(
       auto execution_manager,
       ExecutionManager::Create(
-          tokenizer, model_resources->litert_lm_model_resources.get(),
+          tokenizer.get(), model_resources->litert_lm_model_resources.get(),
           std::move(executor), std::move(vision_executor_settings_ptr),
           std::move(audio_executor_settings_ptr), &litert_env));
 
   auto llm_impl = absl::WrapUnique(new EngineAdvancedLegacyImpl(
       std::move(engine_settings), std::move(model_resources),
       std::move(execution_manager), std::move(tokenizer),
-      std::move(task_tokenizer), std::move(benchmark_info)));
+      std::move(benchmark_info)));
   return llm_impl;
 };
 

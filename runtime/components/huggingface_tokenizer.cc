@@ -54,7 +54,7 @@ HuggingFaceTokenizer::CreateFromFile(absl::string_view json_path) {
 }
 
 absl::StatusOr<std::unique_ptr<HuggingFaceTokenizer>>
-HuggingFaceTokenizer::CreateFromJson(std::string json) {
+HuggingFaceTokenizer::CreateFromJson(const std::string& json) {
   auto tokenizer = tokenizers::Tokenizer::FromBlobJSON(json);
   if (!tokenizer) {
     return absl::InvalidArgumentError("Failed to create tokenizer from JSON.");

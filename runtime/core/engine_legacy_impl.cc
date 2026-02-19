@@ -157,7 +157,7 @@ class EngineImpl : public Engine {
   EngineImpl(EngineSettings engine_settings,
              std::unique_ptr<oi::ExecutorModelResources> model_resources,
              std::unique_ptr<LlmExecutor> executor,
-             std::unique_ptr<Tokenizer> task_tokenizer, Tokenizer* tokenizer,
+             std::unique_ptr<Tokenizer> tokenizer,
              std::unique_ptr<VisionExecutor> vision_executor,
              std::unique_ptr<AudioExecutor> audio_executor,
              std::optional<BenchmarkInfo> benchmark_info,
@@ -165,8 +165,7 @@ class EngineImpl : public Engine {
       : engine_settings_(std::move(engine_settings)),
         model_resources_(std::move(model_resources)),
         executor_(std::move(executor)),
-        task_tokenizer_(std::move(task_tokenizer)),
-        tokenizer_(tokenizer),
+        tokenizer_(std::move(tokenizer)),
         vision_executor_(std::move(vision_executor)),
         audio_executor_(std::move(audio_executor)),
         stop_token_ids_(),
@@ -183,7 +182,7 @@ class EngineImpl : public Engine {
     // sampler component.
     config.GetMutableSamplerParams().set_type(
         proto::SamplerParameters::TYPE_UNSPECIFIED);
-    return InitializeSessionBasic(executor_.get(), tokenizer_,
+    return InitializeSessionBasic(executor_.get(), tokenizer_.get(),
                                   vision_executor_.get(), audio_executor_.get(),
                                   config, benchmark_info_,
                                   worker_thread_pool_.get());
@@ -207,14 +206,8 @@ class EngineImpl : public Engine {
   // Executor for all sessions.
   std::unique_ptr<LlmExecutor> executor_;
 
-  // Tokenizer from task file, that is not owned by the model resources.
-  // So we keep it here to avoid the model resources being destroyed.
-  std::unique_ptr<Tokenizer> task_tokenizer_;
-
-  // A pointer to the tokenizer, that is either the task_tokenizer_ or the
-  // tokenizer from the litert lm model resources. Set in constructor and it is
-  // used in CreateSession().
-  Tokenizer* tokenizer_ = nullptr;
+  // Tokenizer shared by all sessions.
+  std::unique_ptr<Tokenizer> tokenizer_;
 
   // Vision executor for all sessions.
   std::unique_ptr<VisionExecutor> vision_executor_;
@@ -252,8 +245,7 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
       oi::BuildModelResources(/*model_path=*/"", scoped_model_file));
 
   proto::LlmMetadata llm_metadata;
-  std::unique_ptr<Tokenizer> task_tokenizer;
-  Tokenizer* tokenizer = nullptr;
+  std::unique_ptr<Tokenizer> tokenizer;
   if (model_resources->litert_lm_model_resources == nullptr) {
     // Handle the .task file format.
     ASSIGN_OR_RETURN(auto resources, ModelAssetBundleResources::Create(
@@ -263,9 +255,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
           BenchmarkInfo::InitPhase::kTokenizer));
     }
     ASSIGN_OR_RETURN(auto vocab_buffer, resources->GetFile("TOKENIZER_MODEL"));
-    ASSIGN_OR_RETURN(task_tokenizer,
+    ASSIGN_OR_RETURN(tokenizer,
                      SentencePieceTokenizer::CreateFromBuffer(vocab_buffer));
-    tokenizer = task_tokenizer.get();
     if (benchmark_info.has_value()) {
       RETURN_IF_ERROR(benchmark_info->TimeInitPhaseEnd(
           BenchmarkInfo::InitPhase::kTokenizer));
@@ -365,9 +356,9 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineImpl::Create(
                                    /*max_num_threads=*/1);
   auto llm_impl = std::make_unique<EngineImpl>(
       std::move(engine_settings), std::move(model_resources),
-      std::move(executor), std::move(task_tokenizer), tokenizer,
-      std::move(vision_executor), std::move(audio_executor),
-      std::move(benchmark_info), std::move(worker_thread_pool));
+      std::move(executor), std::move(tokenizer), std::move(vision_executor),
+      std::move(audio_executor), std::move(benchmark_info),
+      std::move(worker_thread_pool));
   return llm_impl;
 };
 

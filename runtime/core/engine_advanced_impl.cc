@@ -32,6 +32,7 @@
 #include "litert/cc/litert_environment.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "runtime/components/model_resources.h"
+#include "runtime/components/tokenizer.h"
 #include "runtime/core/session_factory.h"
 #include "runtime/engine/engine.h"
 #include "runtime/engine/engine_factory.h"
@@ -134,10 +135,12 @@ class EngineAdvancedImpl : public Engine {
 
   EngineAdvancedImpl(EngineSettings engine_settings,
                      std::unique_ptr<ModelResources> litert_model_resources,
+                     std::unique_ptr<Tokenizer> tokenizer,
                      std::unique_ptr<ExecutionManager> execution_manager,
                      std::optional<BenchmarkInfo> benchmark_info)
       : engine_settings_(std::move(engine_settings)),
         litert_model_resources_(std::move(litert_model_resources)),
+        tokenizer_(std::move(tokenizer)),
         execution_manager_(std::move(execution_manager)),
         benchmark_info_(std::move(benchmark_info)) {}
 
@@ -159,7 +162,6 @@ class EngineAdvancedImpl : public Engine {
     RETURN_IF_ERROR(config.MaybeUpdateAndValidate(engine_settings_));
 
     ABSL_CHECK(litert_model_resources_ != nullptr);
-    ASSIGN_OR_RETURN(auto* tokenizer, litert_model_resources_->GetTokenizer());
 
     std::optional<AudioExecutorProperties> audio_executor_properties;
     if (config.AudioModalityEnabled()) {
@@ -168,10 +170,11 @@ class EngineAdvancedImpl : public Engine {
                            *litert_model_resources_));
     }
 
-    ASSIGN_OR_RETURN(auto session, InitializeSessionAdvanced(
-                                       execution_manager_, tokenizer, config,
-                                       std::move(session_benchmark_info),
-                                       audio_executor_properties));
+    ASSIGN_OR_RETURN(
+        auto session,
+        InitializeSessionAdvanced(execution_manager_, tokenizer_.get(), config,
+                                  std::move(session_benchmark_info),
+                                  audio_executor_properties));
 
     if (benchmark_info_.has_value()) {
       auto session_benchmark_info_or = session->GetMutableBenchmarkInfo();
@@ -196,6 +199,9 @@ class EngineAdvancedImpl : public Engine {
 
   // Model resources, which must outlive `executor_`.
   std::unique_ptr<ModelResources> litert_model_resources_;
+
+  // Tokenizer shared by all sessions.
+  std::unique_ptr<Tokenizer> tokenizer_;
 
   // Execution manager for the engine.
   std::shared_ptr<ExecutionManager> execution_manager_;
@@ -230,7 +236,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
     RETURN_IF_ERROR(benchmark_info->TimeInitPhaseStart(
         BenchmarkInfo::InitPhase::kTokenizer));
   }
-  ASSIGN_OR_RETURN(auto* tokenizer, model_resources->GetTokenizer());
+  ASSIGN_OR_RETURN(std::unique_ptr<Tokenizer> tokenizer,
+                   model_resources->GetTokenizer());
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(
         benchmark_info->TimeInitPhaseEnd(BenchmarkInfo::InitPhase::kTokenizer));
@@ -303,11 +310,12 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
         std::move(audio_executor_settings));
   }
 
-  ASSIGN_OR_RETURN(auto execution_manager,
-                   ExecutionManager::Create(
-                       tokenizer, model_resources.get(), std::move(executor),
-                       std::move(vision_executor_settings_ptr),
-                       std::move(audio_executor_settings_ptr), &litert_env));
+  ASSIGN_OR_RETURN(
+      auto execution_manager,
+      ExecutionManager::Create(
+          tokenizer.get(), model_resources.get(), std::move(executor),
+          std::move(vision_executor_settings_ptr),
+          std::move(audio_executor_settings_ptr), &litert_env));
 
   if (benchmark_info.has_value()) {
     RETURN_IF_ERROR(
@@ -316,7 +324,8 @@ absl::StatusOr<std::unique_ptr<Engine>> EngineAdvancedImpl::Create(
 
   auto llm_impl = std::make_unique<EngineAdvancedImpl>(
       std::move(engine_settings), std::move(model_resources),
-      std::move(execution_manager), std::move(benchmark_info));
+      std::move(tokenizer), std::move(execution_manager),
+      std::move(benchmark_info));
 
   return llm_impl;
 };
