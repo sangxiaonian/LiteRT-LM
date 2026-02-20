@@ -64,6 +64,8 @@ ABSL_FLAG(bool, use_session, false,
           "Note that session does not use Jinja templates. As such, if using "
           "Jinja in LLM Metadata, the user is responsible for manually "
           "applying the prompt template to the input prompt.");
+ABSL_FLAG(bool, print_raw_input, false,
+          "Print the raw tokenized input before decode.");
 
 namespace {
 
@@ -207,6 +209,7 @@ absl::Status MainHelper(int argc, char** argv) {
   settings.litert_dispatch_lib_dir =
       absl::GetFlag(FLAGS_litert_dispatch_lib_dir);
   settings.sampler_handles_input = absl::GetFlag(FLAGS_sampler_handles_input);
+  settings.print_raw_input = absl::GetFlag(FLAGS_print_raw_input);
   settings.conv_type =
       absl::GetFlag(FLAGS_conv_type) == "float" ? litert::lm::ConvType::kFloat :
       absl::GetFlag(FLAGS_conv_type) == "int8" ? litert::lm::ConvType::kInt8 :

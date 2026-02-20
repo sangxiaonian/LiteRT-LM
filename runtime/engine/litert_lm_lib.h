@@ -104,6 +104,7 @@ struct LiteRtLmSettings {
   // Note that session does not add necessary prompt templates.
   bool use_session = false;
   int num_iterations = 1;
+  bool print_raw_input = false;
   std::string litert_dispatch_lib_dir = "";
   bool sampler_handles_input = true;
   ConvType conv_type = ConvType::kAuto;

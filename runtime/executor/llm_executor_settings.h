@@ -194,6 +194,9 @@ struct AdvancedSettings {
   // tensors including tokens, positions, and mask.
   bool sampler_handles_input = true;
 
+  // If true, the executor will print the raw tokenized input before decode.
+  bool print_raw_input = false;
+
   // If true, the executor allows src quantized fc conv ops on the GPU.
   // This feature is only supported by some GPUs. It can greatly improve
   // performance at the risk of reducing quality.
@@ -215,6 +218,7 @@ struct AdvancedSettings {
            num_threads_to_upload == other.num_threads_to_upload &&
            num_threads_to_compile == other.num_threads_to_compile &&
            convert_weights_on_gpu == other.convert_weights_on_gpu &&
+           print_raw_input == other.print_raw_input &&
            optimize_shader_compilation == other.optimize_shader_compilation &&
            share_constant_tensors == other.share_constant_tensors &&
            sampler_handles_input == other.sampler_handles_input &&

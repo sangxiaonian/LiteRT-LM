@@ -273,6 +273,7 @@ TEST(LlmExecutorConfigTest, LlmExecutorSettingsWithAdvancedSettings) {
       .optimize_shader_compilation = false,
       .share_constant_tensors = false,
       .sampler_handles_input = false,
+      .print_raw_input = true,
       .allow_src_quantized_fc_conv_ops = true,
   });
 
@@ -318,6 +319,7 @@ convert_weights_on_gpu: 1
 optimize_shader_compilation: 0
 share_constant_tensors: 0
 sampler_handles_input: 0
+print_raw_input: 1
 allow_src_quantized_fc_conv_ops: 1
 
 )");

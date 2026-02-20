@@ -207,6 +207,7 @@ absl::StatusOr<EngineSettings> CreateEngineSettings(
       .optimize_shader_compilation = settings.optimize_shader_compilation,
       .share_constant_tensors = settings.share_constant_tensors,
       .sampler_handles_input = settings.sampler_handles_input,
+      .print_raw_input = settings.print_raw_input,
   };
   if (settings.conv_type == ConvType::kFloat) {
     advanced_settings.allow_src_quantized_fc_conv_ops = false;

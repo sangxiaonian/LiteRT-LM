@@ -19,8 +19,10 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>  // NOLINT(build/c++17) for std::filesystem::path
+#include <iostream>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <random>
 #include <string>
 #include <utility>
@@ -45,6 +47,7 @@
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_model.h"  // from @litert
+#include "litert/cc/litert_model_types.h"  // from @litert
 #include "litert/cc/litert_options.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
@@ -649,6 +652,11 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::PrefillInternal(
     absl::flat_hash_map<absl::string_view, TensorBuffer>& prefill_input_buffers,
     Span<const int> ids, bool async) {
   RETURN_IF_ERROR(RollBackProcessedTokens());
+
+  if (executor_settings_.GetAdvancedSettings().has_value() &&
+      executor_settings_.GetAdvancedSettings()->print_raw_input) {
+    std::cout << "Raw input tokens: " << absl::StrJoin(ids, ", ") << std::endl;
+  }
 
   {
     // Fill the input buffers with scoped locks.
