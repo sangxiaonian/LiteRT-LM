@@ -93,8 +93,11 @@ pub const _SYMBOLIC_NAMES: [Option<&'static str>; 14] = [
 lazy_static! {
     static ref _shared_context_cache: Arc<PredictionContextCache> =
         Arc::new(PredictionContextCache::new());
-    static ref VOCABULARY: Box<dyn Vocabulary> =
-        Box::new(VocabularyImpl::new(_LITERAL_NAMES.iter(), _SYMBOLIC_NAMES.iter(), None));
+    static ref VOCABULARY: Box<dyn Vocabulary> = Box::new(VocabularyImpl::new(
+        _LITERAL_NAMES.iter(),
+        _SYMBOLIC_NAMES.iter(),
+        None
+    ));
 }
 
 type BaseParserType<'input, I> = BaseParser<
@@ -147,7 +150,9 @@ where
             base: BaseParser::new_base_parser(
                 input,
                 Arc::clone(&interpreter),
-                AntlrFcParserExt { _pd: Default::default() },
+                AntlrFcParserExt {
+                    _pd: Default::default(),
+                },
             ),
             interpreter,
             _shared_context_cache: Box::new(PredictionContextCache::new()),
@@ -345,7 +350,9 @@ where
                 recog.functionCall()?;
 
                 recog.base.set_state(13);
-                recog.base.match_token(AntlrFcParser_EOF, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_EOF, &mut recog.err_handler)?;
             }
             Ok(())
         })();
@@ -465,20 +472,28 @@ where
         let mut recog = self;
         let _parentctx = recog.ctx.take();
         let mut _localctx = FunctionCallContextExt::new(_parentctx.clone(), recog.base.get_state());
-        recog.base.enter_rule(_localctx.clone(), 2, RULE_functionCall);
+        recog
+            .base
+            .enter_rule(_localctx.clone(), 2, RULE_functionCall);
         let mut _localctx: Rc<FunctionCallContextAll> = _localctx;
         let result: Result<(), ANTLRError> = (|| {
             //recog.base.enter_outer_alt(_localctx.clone(), 1)?;
             recog.base.enter_outer_alt(None, 1)?;
             {
                 recog.base.set_state(15);
-                recog.base.match_token(AntlrFcParser_CALL, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_CALL, &mut recog.err_handler)?;
 
                 recog.base.set_state(16);
-                recog.base.match_token(AntlrFcParser_COLON, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_COLON, &mut recog.err_handler)?;
 
                 recog.base.set_state(17);
-                recog.base.match_token(AntlrFcParser_ID, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_ID, &mut recog.err_handler)?;
 
                 /*InvokeRule object*/
                 recog.base.set_state(18);
@@ -620,7 +635,9 @@ where
             recog.base.enter_outer_alt(None, 1)?;
             {
                 recog.base.set_state(20);
-                recog.base.match_token(AntlrFcParser_OPEN_BRACE, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_OPEN_BRACE, &mut recog.err_handler)?;
 
                 recog.base.set_state(29);
                 recog.err_handler.sync(&mut recog.base)?;
@@ -655,7 +672,9 @@ where
                 }
 
                 recog.base.set_state(31);
-                recog.base.match_token(AntlrFcParser_CLOSE_BRACE, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_CLOSE_BRACE, &mut recog.err_handler)?;
             }
             Ok(())
         })();
@@ -771,10 +790,14 @@ where
             recog.base.enter_outer_alt(None, 1)?;
             {
                 recog.base.set_state(33);
-                recog.base.match_token(AntlrFcParser_ID, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_ID, &mut recog.err_handler)?;
 
                 recog.base.set_state(34);
-                recog.base.match_token(AntlrFcParser_COLON, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_COLON, &mut recog.err_handler)?;
 
                 /*InvokeRule value*/
                 recog.base.set_state(35);
@@ -931,7 +954,9 @@ where
                     recog.base.enter_outer_alt(None, 2)?;
                     {
                         recog.base.set_state(38);
-                        recog.base.match_token(AntlrFcParser_NUMBER, &mut recog.err_handler)?;
+                        recog
+                            .base
+                            .match_token(AntlrFcParser_NUMBER, &mut recog.err_handler)?;
                     }
                 }
 
@@ -940,7 +965,9 @@ where
                     recog.base.enter_outer_alt(None, 3)?;
                     {
                         recog.base.set_state(39);
-                        recog.base.match_token(AntlrFcParser_BOOLEAN, &mut recog.err_handler)?;
+                        recog
+                            .base
+                            .match_token(AntlrFcParser_BOOLEAN, &mut recog.err_handler)?;
                     }
                 }
 
@@ -975,7 +1002,9 @@ where
                     }
                 }
 
-                _ => Err(ANTLRError::NoAltError(NoViableAltError::new(&mut recog.base)))?,
+                _ => Err(ANTLRError::NoAltError(NoViableAltError::new(
+                    &mut recog.base,
+                )))?,
             }
             Ok(())
         })();
@@ -1113,7 +1142,9 @@ where
             recog.base.enter_outer_alt(None, 1)?;
             {
                 recog.base.set_state(45);
-                recog.base.match_token(AntlrFcParser_OPEN_BRACKET, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_OPEN_BRACKET, &mut recog.err_handler)?;
 
                 recog.base.set_state(54);
                 recog.err_handler.sync(&mut recog.base)?;
@@ -1148,7 +1179,9 @@ where
                 }
 
                 recog.base.set_state(56);
-                recog.base.match_token(AntlrFcParser_CLOSE_BRACKET, &mut recog.err_handler)?;
+                recog
+                    .base
+                    .match_token(AntlrFcParser_CLOSE_BRACKET, &mut recog.err_handler)?;
             }
             Ok(())
         })();
