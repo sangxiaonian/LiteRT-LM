@@ -139,6 +139,7 @@ void litert_lm_set_min_log_level(int level);
 typedef enum {
   kInputText,
   kInputImage,
+  kInputImageEnd,
   kInputAudio,
   kInputAudioEnd,
 } InputDataType;

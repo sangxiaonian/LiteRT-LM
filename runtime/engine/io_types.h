@@ -133,6 +133,18 @@ inline std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
+// A signal to indicate the end of input image.
+class InputImageEnd {
+ public:
+  explicit InputImageEnd() = default;
+};
+
+inline std::ostream& operator<<(std::ostream& os,
+                                const InputImageEnd& input_image_end) {
+  os << "[InputImageEnd]";
+  return os;
+}
+
 // A container to host the input audio.
 class InputAudio {
  public:
@@ -203,8 +215,8 @@ inline std::ostream& operator<<(std::ostream& os,
 
 // A container to host the input data. Will be extended to support more input
 // types in the future.
-using InputData =
-    std::variant<InputText, InputImage, InputAudio, InputAudioEnd>;
+using InputData = std::variant<InputText, InputImage, InputAudio, InputImageEnd,
+                               InputAudioEnd>;
 
 inline std::ostream& operator<<(std::ostream& os, const InputData& input_data) {
   std::visit([&os](const auto& data) { os << data; }, input_data);
@@ -232,9 +244,12 @@ inline absl::StatusOr<InputData> CreateInputDataCopy(const InputData& data) {
     return input_audio->CreateCopy();
   } else if (std::get_if<InputAudioEnd>(&data)) {
     return InputAudioEnd();
+  } else if (std::get_if<InputImageEnd>(&data)) {
+    return InputImageEnd();
   }
   return absl::FailedPreconditionError(
-      "The InputData is not a InputText, InputImage, or InputAudio.");
+      "The InputData is not a InputText, InputImage, InputAudio, "
+      "InputImageEnd, or InputAudioEnd.");
 }
 
 // Creates a copy of the InputData vector.
