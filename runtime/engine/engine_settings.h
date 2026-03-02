@@ -78,7 +78,8 @@ class EngineSettings {
   static absl::StatusOr<EngineSettings> CreateDefault(
       ModelAssets model_assets, Backend backend = Backend::CPU,
       std::optional<Backend> vision_backend = std::nullopt,
-      std::optional<Backend> audio_backend = std::nullopt);
+      std::optional<Backend> audio_backend = std::nullopt,
+      std::optional<Backend> sampler_backend = std::nullopt);
 
   // Updates the EngineSettings fields by loading the metadata from the model
   // assets. The function also validates to check if all of the required fields

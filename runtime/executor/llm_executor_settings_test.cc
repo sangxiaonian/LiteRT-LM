@@ -506,5 +506,16 @@ TEST(LlmExecutorConfigTest, MutableBackendConfig) {
   EXPECT_THAT((*settings).MutableBackendConfig<CpuConfig>(),
               StatusIs(kInvalidArgument));
 }
+
+TEST(LlmExecutorConfigTest, SetSupportedLoraRanks) {
+  auto model_assets = ModelAssets::Create(kPathToModel1);
+  ASSERT_OK(model_assets);
+  auto settings = LlmExecutorSettings::CreateDefault(*std::move(model_assets),
+                                                     Backend::GPU_ARTISAN,
+                                                     Backend::GPU);
+  ASSERT_OK(settings);
+  EXPECT_EQ((*settings).GetSamplerBackend(), Backend::GPU);
+}
+
 }  // namespace
 }  // namespace litert::lm

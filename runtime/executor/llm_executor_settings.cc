@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <utility>
 #include <variant>
@@ -125,7 +126,8 @@ std::ostream& operator<<(std::ostream& os, const LlmExecutorSettings& config) {
 
 // static
 absl::StatusOr<LlmExecutorSettings> LlmExecutorSettings::CreateDefault(
-    ModelAssets model_assets, Backend backend) {
+    ModelAssets model_assets, Backend backend,
+    std::optional<Backend> sampler_backend) {
   LlmExecutorSettings settings(std::move(model_assets));
   if (backend == Backend::CPU) {
     CpuConfig config;
@@ -155,6 +157,10 @@ absl::StatusOr<LlmExecutorSettings> LlmExecutorSettings::CreateDefault(
   settings.SetMaxNumImages(0);
   // Disable LoRA by default.
   settings.SetLoraRank(0);
+
+  if (sampler_backend.has_value() && *sampler_backend != Backend::UNSPECIFIED) {
+    settings.SetSamplerBackend(*sampler_backend);
+  }
   return settings;
 }
 

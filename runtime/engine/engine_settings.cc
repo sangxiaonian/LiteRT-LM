@@ -105,11 +105,11 @@ absl::Status ValidateBackendConstraint(
 // static
 absl::StatusOr<EngineSettings> EngineSettings::CreateDefault(
     ModelAssets model_assets, Backend backend,
-    std::optional<Backend> vision_backend,
-    std::optional<Backend> audio_backend) {
+    std::optional<Backend> vision_backend, std::optional<Backend> audio_backend,
+    std::optional<Backend> sampler_backend) {
   ASSIGN_OR_RETURN(  // NOLINT
-      auto executor_settings,
-      LlmExecutorSettings::CreateDefault(model_assets, backend));
+      auto executor_settings, LlmExecutorSettings::CreateDefault(
+                                  model_assets, backend, sampler_backend));
   std::optional<VisionExecutorSettings> vision_executor_settings;
   if (vision_backend.has_value()) {
     ASSIGN_OR_RETURN(

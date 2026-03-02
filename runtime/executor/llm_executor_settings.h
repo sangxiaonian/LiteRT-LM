@@ -250,7 +250,8 @@ class LlmExecutorSettings : public ExecutorSettingsBase {
   // Creates a LlmExecutorSettings with default values using the provided
   // ModelAssets.
   static absl::StatusOr<LlmExecutorSettings> CreateDefault(
-      ModelAssets model_assets, Backend backend = Backend::CPU);
+      ModelAssets model_assets, Backend backend = Backend::CPU,
+      std::optional<Backend> sampler_backend = std::nullopt);
 
   uint32_t GetMaxNumTokens() const { return max_num_tokens_; }
   void SetMaxNumTokens(uint32_t max_num_tokens) {

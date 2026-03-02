@@ -643,6 +643,18 @@ TEST(EngineSettingsTest, MaybeUpdateAndValidateNPU) {
             proto::SamplerParameters::TOP_P);
 }
 
+TEST(EngineSettingsTest, CreateDefaultWithSamplerBackend) {
+  auto model_assets = ModelAssets::Create("test_model_path_1");
+  ASSERT_OK(model_assets);
+  auto settings = EngineSettings::CreateDefault(*model_assets, Backend::CPU,
+                                                std::nullopt, std::nullopt,
+                                                Backend::GPU);
+  ASSERT_OK(settings);
+  EXPECT_EQ(settings->GetMainExecutorSettings().GetBackend(), Backend::CPU);
+  EXPECT_EQ(settings->GetMainExecutorSettings().GetSamplerBackend(),
+            Backend::GPU);
+}
+
 TEST(EngineSettingsTest, PrintOperator) {
   auto model_assets = ModelAssets::Create("test_model_path_1");
   ASSERT_OK(model_assets);
