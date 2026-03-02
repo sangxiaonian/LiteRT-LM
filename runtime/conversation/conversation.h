@@ -300,6 +300,9 @@ struct OptionalArgs {
   // controller will be stored and can be cancelled by calling
   // `Conversation::CancelGroup(task_group_id)`.
   std::optional<std::string> task_group_id = std::nullopt;
+
+  // The verbosity of the debug data to capture for this single-turn.
+  DebugVerbosity debug_verbosity = DebugVerbosity::kOff;
 };
 
 // A multi-turn centric stateful Conversation API for high-level user
@@ -461,6 +464,20 @@ class Conversation {
   // - The mutable benchmark info for the conversation.
   absl::StatusOr<BenchmarkInfo*> GetMutableBenchmarkInfo();
 
+  // Returns the last debug data captured for the inputs to this session.
+  // Optional depending on whether `OptionalArgs::debug_verbosity` was set.
+  std::optional<DebugInputData> GetLastInputDebugData() const {
+    absl::MutexLock lock(&history_mutex_);  // NOLINT
+    return last_input_debug_data_;
+  }
+
+  // Returns the last debug data captured for the outputs from this session.
+  // Optional depending on whether `OptionalArgs::debug_verbosity` was set.
+  std::optional<DebugOutputData> GetLastOutputDebugData() const {
+    absl::MutexLock lock(&history_mutex_);  // NOLINT
+    return last_output_debug_data_;
+  }
+
   // Cancels the ongoing inference process, for asynchronous inference.
   // Note: the underlying Session is not rollbacked, so the message
   // from the user is actually sent to the LLM and processed for prefill.
@@ -534,6 +551,11 @@ class Conversation {
 
   // Whether the current conversation is in message appending state.
   bool is_appending_message_ = false;
+
+  std::optional<DebugInputData> last_input_debug_data_
+      ABSL_GUARDED_BY(history_mutex_);
+  std::optional<DebugOutputData> last_output_debug_data_
+      ABSL_GUARDED_BY(history_mutex_);
 
   // Mutex for task_controllers_.
   mutable absl::Mutex task_controllers_mutex_;

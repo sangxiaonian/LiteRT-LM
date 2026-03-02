@@ -15,14 +15,34 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LM_RUNTIME_CONVERSATION_IO_TYPES_H_
 #define THIRD_PARTY_ODML_LITERT_LM_RUNTIME_CONVERSATION_IO_TYPES_H_
 
+#include <optional>
 #include <ostream>
+#include <string>
 #include <variant>
+#include <vector>
 
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 
 namespace litert::lm {
 
 using JsonMessage = nlohmann::ordered_json;
+
+enum class DebugVerbosity {
+  kOff = 0,
+  kText = 1,
+  kTokens = 2,
+  kBoth = 3,
+};
+
+struct DebugInputData {
+  std::optional<std::string> text;
+  std::optional<std::vector<int>> token_ids;
+};
+
+struct DebugOutputData {
+  std::optional<std::string> text;
+  std::optional<std::vector<int>> token_ids;
+};
 
 // Message is the data container for a single turn of the conversation.
 using Message = std::variant<JsonMessage>;

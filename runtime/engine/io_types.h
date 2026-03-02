@@ -312,10 +312,8 @@ bool IsTaskEndState(const TaskState& task_state);
 // A container to host the model responses.
 class Responses {
  public:
-  explicit Responses(TaskState task_state,
-                     std::vector<std::string> response_texts = {},
-                     std::vector<float> scores = {},
-                     std::vector<int> token_lengths = {})
+  Responses(TaskState task_state, std::vector<std::string> response_texts = {},
+            std::vector<float> scores = {}, std::vector<int> token_lengths = {})
       : task_state_(task_state),
         response_texts_(std::move(response_texts)),
         scores_(std::move(scores)) {
@@ -323,6 +321,16 @@ class Responses {
       token_lengths_ = std::move(token_lengths);
     }
   };
+
+  // Move constructor explicitly handling raw_decode_tokens_.
+  Responses(Responses&& other) = default;
+  // Move assignment operator explicitly handling raw_decode_tokens_.
+  Responses& operator=(Responses&& other) = default;
+
+  // Copy constructor explicitly handling raw_decode_tokens_.
+  Responses(const Responses& other) = default;
+  // Copy assignment operator explicitly handling raw_decode_tokens_.
+  Responses& operator=(const Responses& other) = default;
 
   // Returns the task state.
   const TaskState& GetTaskState() const { return task_state_; }
@@ -362,6 +370,17 @@ class Responses {
     return token_scores_;
   };
 
+  // Returns the const raw decode tokens vector.
+  const std::optional<std::vector<std::vector<int>>>& GetRawDecodeTokens()
+      const {
+    return raw_decode_tokens_;
+  }
+
+  // Returns the mutable raw decode tokens vector.
+  std::optional<std::vector<std::vector<int>>>& GetMutableRawDecodeTokens() {
+    return raw_decode_tokens_;
+  };
+
  private:
   // The state of the task.
   TaskState task_state_;
@@ -378,6 +397,11 @@ class Responses {
 
   // The output vector of token scores for each response text. Optional.
   std::optional<std::vector<std::vector<float>>> token_scores_;
+
+  // The output vector of raw decode tokens. Structured as
+  // [num_candidates][num_tokens]. Optional. Captured if requested by config.
+  std::optional<std::vector<std::vector<int>>> raw_decode_tokens_ =
+      std::nullopt;
 };
 std::ostream& operator<<(std::ostream& os, const Responses& responses);
 
@@ -524,11 +548,20 @@ class DecodeConfig {
   // Returns the max output tokens.
   std::optional<int> GetMaxOutputTokens() const { return max_output_tokens_; }
 
+  // Sets whether to return raw decode tokens in the Response.
+  void SetReturnRawDecodeTokens(bool return_raw_decode_tokens) {
+    return_raw_decode_tokens_ = return_raw_decode_tokens;
+  }
+
+  // Returns whether to return raw decode tokens in the Response.
+  bool GetReturnRawDecodeTokens() const { return return_raw_decode_tokens_; }
+
  private:
   DecodeConfig() = default;
 
   Constraint* absl_nullable constraint_ = nullptr;
   std::optional<int> max_output_tokens_ = std::nullopt;
+  bool return_raw_decode_tokens_ = false;
 };
 
 // The properties of the audio model. These properties are populated by

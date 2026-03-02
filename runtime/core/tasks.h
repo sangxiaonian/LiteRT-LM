@@ -46,7 +46,8 @@ absl::StatusOr<Responses> Decode(
     std::optional<litert::TensorBuffer> decoded_ids,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)>& callback,
     std::atomic<bool>* cancelled,
-    int max_output_tokens = std::numeric_limits<int>::max());
+    int max_output_tokens = std::numeric_limits<int>::max(),
+    bool return_raw_decode_tokens = false);
 
 absl::StatusOr<Responses> Score(
     LlmExecutor& executor, Tokenizer& tokenizer,

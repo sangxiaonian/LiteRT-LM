@@ -139,6 +139,7 @@ class DecodeOneStep {
     // Post-processing the next tokens.
     ASSIGN_OR_RETURN(auto token_ids,
                      tokenizer_.TensorBufferToTokenIds(next_tokens_buffer));
+    last_sampled_token_ids_ = token_ids;
 
     // Merge BPE partial token ids with the next token ids if any.
     ASSIGN_OR_RETURN(
@@ -189,7 +190,15 @@ class DecodeOneStep {
     return stop_token_detector_.AllDone();
   }
 
+  // Returns the scores for the current step. Available only for external
+  // sampling.
   absl::Span<float> GetScores() { return scores_span_; }
+
+  // Returns the latest raw token IDs sampled from the model before any
+  // stop token or formatting logic is applied.
+  const std::vector<std::vector<int>>& GetLastSampledTokenIds() const {
+    return last_sampled_token_ids_;
+  }
 
   const std::vector<std::string>& GetResultText() const { return result_text_; }
 
@@ -322,10 +331,10 @@ class DecodeOneStep {
   litert::TensorBuffer scores_tensor_;
   absl::Span<float> scores_span_;
 
-  // Common state
   std::vector<std::vector<int>> bpe_partial_token_ids_;
   std::vector<std::queue<std::string>> pending_stop_tokens_;
   std::vector<std::string> result_text_;
+  std::vector<std::vector<int>> last_sampled_token_ids_;
 
   bool is_first_step_ = true;
 };
@@ -372,7 +381,8 @@ absl::StatusOr<Responses> Decode(
     std::optional<Sampler*> sampler, Constraint* constraint,
     std::optional<litert::TensorBuffer> decoded_ids,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)>& callback,
-    std::atomic<bool>* cancelled, int max_output_tokens) {
+    std::atomic<bool>* cancelled, int max_output_tokens,
+    bool return_raw_decode_tokens) {
   const bool is_streaming = callback != nullptr;
   const bool is_custom_sampling = sampler.has_value();
 
@@ -397,6 +407,12 @@ absl::StatusOr<Responses> Decode(
   std::vector<float> accumulated_scores(num_output_candidates);
   // The number of decoded tokens for each candidate (for custom sampling).
   std::vector<int> num_decoded_tokens(num_output_candidates);
+
+  // The raw token IDs captured during the decoding loop.
+  std::optional<std::vector<std::vector<int>>> raw_decode_tokens;
+  if (return_raw_decode_tokens) {
+    raw_decode_tokens = std::vector<std::vector<int>>(num_output_candidates);
+  }
 
   int num_decode_steps = 0;
   const int max_num_tokens = TryGetMaxNumTokens(executor);
@@ -439,6 +455,16 @@ absl::StatusOr<Responses> Decode(
       return all_done.status();
     }
     num_decode_steps++;
+
+    if (return_raw_decode_tokens) {
+      const auto& last_sampled_ids = run_one_step.GetLastSampledTokenIds();
+      for (int j = 0; j < num_output_candidates; ++j) {
+        if (j < last_sampled_ids.size() && !last_sampled_ids[j].empty()) {
+          raw_decode_tokens.value()[j].push_back(last_sampled_ids[j][0]);
+        }
+      }
+    }
+
     std::vector<std::string> step_texts;
     std::vector<float> step_scores;
     if (is_streaming) {
@@ -474,8 +500,12 @@ absl::StatusOr<Responses> Decode(
     }
 
     if (is_streaming && any_updates && !*all_done) {
-      callback(Responses(TaskState::kProcessing, std::move(step_texts),
-                         std::move(step_scores)));
+      Responses responses(TaskState::kProcessing, std::move(step_texts),
+                          std::move(step_scores));
+      if (return_raw_decode_tokens) {
+        responses.GetMutableRawDecodeTokens() = raw_decode_tokens;
+      }
+      callback(std::move(responses));
     }
 
     if (ShouldStop(*all_done, benchmark_decode_token_count, num_decode_steps,
@@ -509,10 +539,15 @@ absl::StatusOr<Responses> Decode(
   }
 
   if (is_streaming) {
-    if (executor.GetCurrentStep().value() >= max_num_tokens) {
-      return Responses(TaskState::kMaxNumTokensReached);
+    ASSIGN_OR_RETURN(auto current_step, executor.GetCurrentStep());
+    TaskState state = current_step >= max_num_tokens
+                          ? TaskState::kMaxNumTokensReached
+                          : TaskState::kDone;
+    Responses responses(std::move(state));
+    if (return_raw_decode_tokens) {
+      responses.GetMutableRawDecodeTokens() = std::move(raw_decode_tokens);
     }
-    return Responses(TaskState::kDone);
+    return responses;
   }
 
   // Finalize scores for non-streaming custom sampling.
@@ -525,11 +560,16 @@ absl::StatusOr<Responses> Decode(
       }
     }
   }
-  TaskState task_state = executor.GetCurrentStep().value() >= max_num_tokens
+  ASSIGN_OR_RETURN(auto current_step, executor.GetCurrentStep());
+  TaskState task_state = current_step >= max_num_tokens
                              ? TaskState::kMaxNumTokensReached
                              : TaskState::kDone;
-  return Responses(std::move(task_state), std::move(final_texts),
-                   std::move(final_scores));
+  Responses responses(std::move(task_state), std::move(final_texts),
+                      std::move(final_scores));
+  if (return_raw_decode_tokens) {
+    responses.GetMutableRawDecodeTokens() = std::move(raw_decode_tokens);
+  }
+  return responses;
 }
 
 absl::StatusOr<Responses> Score(

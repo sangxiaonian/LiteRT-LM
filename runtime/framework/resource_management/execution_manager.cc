@@ -744,13 +744,13 @@ absl::Status ExecutionManager::AddDecodeTask(
     Constraint* absl_nullable constraint,
     std::shared_ptr<std::atomic<bool>> absl_nonnull cancelled,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
-    int max_output_tokens) {
+    int max_output_tokens, bool return_raw_decode_tokens) {
   if (callback == nullptr) {
     callback = [](absl::StatusOr<Responses> responses) {};
   }
 
-  auto task = [this, task_id, constraint, cancelled,
-               max_output_tokens]() mutable -> void {
+  auto task = [this, task_id, constraint, cancelled, max_output_tokens,
+               return_raw_decode_tokens]() mutable -> void {
     auto task_info = StartTask(task_id);
     if (!task_info.ok()) {
       FinishTaskAndLogErrors(task_id, task_info.status(),
@@ -798,7 +798,7 @@ absl::Status ExecutionManager::AddDecodeTask(
         *llm_executor.value(), *tokenizer_, *session_info->stop_token_detector,
         num_output_candidates, session_info->benchmark_info, optional_sampler,
         constraint, std::move(decoded_ids_buffer), callback, cancelled.get(),
-        max_output_tokens);
+        max_output_tokens, return_raw_decode_tokens);
     if (!responses.ok() && absl::IsCancelled(responses.status())) {
       responses = Responses(TaskState::kCancelled);
     }

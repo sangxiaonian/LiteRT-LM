@@ -46,6 +46,7 @@
 #include "runtime/engine/engine_settings.h"
 #include "runtime/engine/io_types.h"
 #include "runtime/proto/llm_model_type.pb.h"
+#include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/model_type_utils.h"
 #include "runtime/util/status_macros.h"
 
@@ -348,19 +349,61 @@ absl::StatusOr<Message> Conversation::SendMessage(const Message& message,
   auto json_message = std::get<nlohmann::ordered_json>(message);
   ASSIGN_OR_RETURN(const std::string& single_turn_text,
                    GetSingleTurnText(message, optional_args));
-  absl::MutexLock lock(history_mutex_);  // NOLINT
-  if (json_message.is_array()) {
-    for (const auto& message : json_message) {
-      history_.push_back(message);
+  {
+    absl::MutexLock lock(history_mutex_);  // NOLINT
+    if (json_message.is_array()) {
+      for (const auto& message : json_message) {
+        history_.push_back(message);
+      }
+    } else {
+      history_.push_back(json_message);
     }
-  } else {
-    history_.push_back(json_message);
   }
   ASSIGN_OR_RETURN(
       const auto session_inputs,
       model_data_processor_->ToInputDataVector(
           single_turn_text, nlohmann::ordered_json::array({json_message}),
           optional_args.args.value_or(std::monostate())));
+
+  if (optional_args.debug_verbosity != DebugVerbosity::kOff) {
+    DebugInputData debug_input;
+    if (optional_args.debug_verbosity == DebugVerbosity::kText ||
+        optional_args.debug_verbosity == DebugVerbosity::kBoth) {
+      debug_input.text = single_turn_text;
+    }
+    if (optional_args.debug_verbosity == DebugVerbosity::kTokens ||
+        optional_args.debug_verbosity == DebugVerbosity::kBoth) {
+      std::vector<int> token_ids;
+      for (const auto& input : session_inputs) {
+        if (std::holds_alternative<InputText>(input)) {
+          auto text_opt = std::get<InputText>(input).GetRawTextString();
+          if (text_opt.ok()) {
+            auto token_ids_res = const_cast<Tokenizer&>(engine_.GetTokenizer())
+                                     .TextToTokenIds(*text_opt);
+            if (token_ids_res.ok()) {
+              token_ids.insert(token_ids.end(), token_ids_res->begin(),
+                               token_ids_res->end());
+            }
+          } else {
+            const auto* buffer =
+                std::get<InputText>(input).GetPreprocessedTextTensor().value_or(
+                    nullptr);
+            if (buffer != nullptr) {
+              auto span = ReferTensorBufferAsSpan<int>(*buffer);
+              if (span) {
+                token_ids.insert(token_ids.end(), span->begin(), span->end());
+              }
+            }
+          }
+        }
+      }
+      debug_input.token_ids = std::move(token_ids);
+    }
+    absl::MutexLock lock(history_mutex_);
+    last_input_debug_data_ = std::move(debug_input);
+    last_output_debug_data_ = std::nullopt;
+  }
+
   RETURN_IF_ERROR(IgnoreEmptyInputError(session_->RunPrefill(session_inputs)));
   if (is_appending_message_) {
     return JsonMessage();
@@ -369,12 +412,35 @@ absl::StatusOr<Message> Conversation::SendMessage(const Message& message,
         auto decode_config,
         CreateDecodeConfig(std::move(optional_args.decoding_constraint),
                            optional_args.max_output_tokens));
+    if (optional_args.debug_verbosity != DebugVerbosity::kOff) {
+      decode_config.SetReturnRawDecodeTokens(true);
+    }
     ASSIGN_OR_RETURN(const Responses& responses,
                      session_->RunDecode(decode_config));
+
+    if (optional_args.debug_verbosity != DebugVerbosity::kOff) {
+      absl::MutexLock lock(history_mutex_);
+      last_output_debug_data_ = DebugOutputData{};
+      if (optional_args.debug_verbosity == DebugVerbosity::kText ||
+          optional_args.debug_verbosity == DebugVerbosity::kBoth) {
+        if (!responses.GetTexts().empty()) {
+          last_output_debug_data_->text = responses.GetTexts()[0];
+        }
+      }
+      if (optional_args.debug_verbosity == DebugVerbosity::kTokens ||
+          optional_args.debug_verbosity == DebugVerbosity::kBoth) {
+        const auto& raw_tokens = responses.GetRawDecodeTokens();
+        if (raw_tokens.has_value() && !raw_tokens->empty()) {
+          last_output_debug_data_->token_ids = raw_tokens.value()[0];
+        }
+      }
+    }
+
     ASSIGN_OR_RETURN(
         const Message assistant_message,
         model_data_processor_->ToMessage(
             responses, optional_args.args.value_or(std::monostate())));
+    absl::MutexLock lock(history_mutex_);
     history_.push_back(assistant_message);
     return assistant_message;
   }
@@ -407,6 +473,45 @@ absl::Status Conversation::SendMessageAsync(
           single_turn_text, nlohmann::ordered_json::array({json_message}),
           optional_args.args.value_or(std::monostate())));
 
+  if (optional_args.debug_verbosity != DebugVerbosity::kOff) {
+    DebugInputData debug_input;
+    if (optional_args.debug_verbosity == DebugVerbosity::kText ||
+        optional_args.debug_verbosity == DebugVerbosity::kBoth) {
+      debug_input.text = single_turn_text;
+    }
+    if (optional_args.debug_verbosity == DebugVerbosity::kTokens ||
+        optional_args.debug_verbosity == DebugVerbosity::kBoth) {
+      std::vector<int> token_ids;
+      for (const auto& input : session_inputs) {
+        if (std::holds_alternative<InputText>(input)) {
+          auto text_opt = std::get<InputText>(input).GetRawTextString();
+          if (text_opt.ok()) {
+            auto token_ids_res = const_cast<Tokenizer&>(engine_.GetTokenizer())
+                                     .TextToTokenIds(*text_opt);
+            if (token_ids_res.ok()) {
+              token_ids.insert(token_ids.end(), token_ids_res->begin(),
+                               token_ids_res->end());
+            }
+          } else {
+            const auto* buffer =
+                std::get<InputText>(input).GetPreprocessedTextTensor().value_or(
+                    nullptr);
+            if (buffer != nullptr) {
+              auto span = ReferTensorBufferAsSpan<int>(*buffer);
+              if (span) {
+                token_ids.insert(token_ids.end(), span->begin(), span->end());
+              }
+            }
+          }
+        }
+      }
+      debug_input.token_ids = std::move(token_ids);
+    }
+    absl::MutexLock lock(history_mutex_);
+    last_input_debug_data_ = std::move(debug_input);
+    last_output_debug_data_ = std::nullopt;
+  }
+
   absl::AnyInvocable<void(Message)> complete_message_callback =
       [this](const Message& complete_message) {
         absl::MutexLock lock(this->history_mutex_);  // NOLINT
@@ -420,16 +525,32 @@ absl::Status Conversation::SendMessageAsync(
 
   auto internal_callback =
       std::make_shared<absl::AnyInvocable<void(absl::StatusOr<Responses>)>>(
-          CreateInternalCallback(*model_data_processor_,
-                                 optional_args.args.value_or(std::monostate()),
-                                 std::move(user_callback),
-                                 std::move(cancel_callback),
-                                 std::move(complete_message_callback)));
+          CreateInternalCallback(
+              *model_data_processor_,
+              optional_args.args.value_or(std::monostate()),
+              [user_callback_ptr = std::make_shared<
+                   absl::AnyInvocable<void(absl::StatusOr<Message>)>>(
+                   std::move(user_callback)),
+               debug_verbosity = optional_args.debug_verbosity](
+                  absl::StatusOr<Message> message) mutable {
+                if (message.ok() && debug_verbosity != DebugVerbosity::kOff) {
+                  // Note: We need the full Response object to extract token
+                  // details, which we intercept before calling user_callback
+                  // below. However, to keep CreateInternalCallback simple, we
+                  // handle debug capture in the Responses wrapper block below.
+                }
+                (*user_callback_ptr)(std::move(message));
+              },
+              std::move(cancel_callback),
+              std::move(complete_message_callback)));
 
   ASSIGN_OR_RETURN(
       auto decode_config,
       CreateDecodeConfig(std::move(optional_args.decoding_constraint),
                          optional_args.max_output_tokens));
+  if (optional_args.debug_verbosity != DebugVerbosity::kOff) {
+    decode_config.SetReturnRawDecodeTokens(true);
+  }
   if (is_appending_message_) {
     ASSIGN_OR_RETURN(
         auto task_controller,
@@ -447,7 +568,8 @@ absl::Status Conversation::SendMessageAsync(
         auto prefill_task_controller,
         session_->RunPrefillAsync(
             session_inputs, [this, callback = internal_callback, decode_config,
-                             task_group_id = optional_args.task_group_id](
+                             task_group_id = optional_args.task_group_id,
+                             debug_verbosity = optional_args.debug_verbosity](
                                 absl::StatusOr<Responses> responses) mutable {
               // First, check if prefill returned an error. Ignore errors caused
               // by empty input, as this is a valid case for triggering decode
@@ -464,7 +586,35 @@ absl::Status Conversation::SendMessageAsync(
                 // prefill completed successfully. In either case, we can now
                 // start the decode process.
                 auto decode_task_controller = session_->RunDecodeAsync(
-                    [callback](absl::StatusOr<Responses> responses) {
+                    [this, callback,
+                     debug_verbosity](absl::StatusOr<Responses> responses) {
+                      if (responses.ok() &&
+                          debug_verbosity != DebugVerbosity::kOff) {
+                        absl::MutexLock lock(history_mutex_);
+                        if (!last_output_debug_data_.has_value()) {
+                          last_output_debug_data_ = DebugOutputData{};
+                          if (debug_verbosity == DebugVerbosity::kText ||
+                              debug_verbosity == DebugVerbosity::kBoth) {
+                            last_output_debug_data_->text = "";
+                          }
+                        }
+                        if (debug_verbosity == DebugVerbosity::kText ||
+                            debug_verbosity == DebugVerbosity::kBoth) {
+                          if (!responses->GetTexts().empty()) {
+                            last_output_debug_data_->text.value() +=
+                                responses->GetTexts()[0];
+                          }
+                        }
+                        if (debug_verbosity == DebugVerbosity::kTokens ||
+                            debug_verbosity == DebugVerbosity::kBoth) {
+                          const auto& raw_tokens =
+                              responses->GetRawDecodeTokens();
+                          if (raw_tokens.has_value() && !raw_tokens->empty()) {
+                            last_output_debug_data_->token_ids =
+                                raw_tokens.value()[0];
+                          }
+                        }
+                      }
                       (*callback)(responses);
                     },
                     decode_config);

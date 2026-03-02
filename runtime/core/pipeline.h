@@ -60,13 +60,17 @@ absl::StatusOr<int> Prefill(LlmExecutor& executor, ExecutorInputs& inputs,
 // - constraint: The constraint to constrain the decoding process.
 // - benchmark_info: The benchmark info to record the performance metrics.
 // - cancelled: A pointer to an atomic boolean. If the boolean is set to true,
-//   the decoding process will be cancelled.
+//   cancelled.
+// - max_output_tokens: The maximum number of tokens to generate.
+// - return_raw_decode_tokens: Whether to return the raw vector of sampled token
+// ids.
 absl::StatusOr<Responses> Decode(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
     Constraint* constraint, std::optional<BenchmarkInfo>& benchmark_info,
     std::atomic<bool>* cancelled = nullptr,
-    int max_output_tokens = std::numeric_limits<int>::max());
+    int max_output_tokens = std::numeric_limits<int>::max(),
+    bool return_raw_decode_tokens = false);
 
 // Runs the pipeline to decode the input prompt. The function is similar to
 // Decode, but it outputs the result using the callback to achieve streaming
@@ -74,13 +78,17 @@ absl::StatusOr<Responses> Decode(
 // - callback: The inference callback to receive the intermediate results.
 // - cancelled: A pointer to an atomic boolean. If the boolean is set to true,
 //   the decoding process will be cancelled.
+// - max_output_tokens: The maximum number of tokens to generate.
+// - return_raw_decode_tokens: Whether to return the raw vector of sampled token
+// ids.
 absl::Status DecodeStreaming(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
     Constraint* constraint, std::optional<BenchmarkInfo>& benchmark_info,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
     std::atomic<bool>* cancelled = nullptr,
-    int max_output_tokens = std::numeric_limits<int>::max());
+    int max_output_tokens = std::numeric_limits<int>::max(),
+    bool return_raw_decode_tokens = false);
 
 // Runs the pipeline to decode the input prompt.
 // - executor: The executor that call the core LLM model.
@@ -94,13 +102,17 @@ absl::Status DecodeStreaming(
 // - benchmark_info: The benchmark info to record the performance metrics.
 // - cancelled: A pointer to an atomic boolean. If the boolean is set to true,
 //   the decoding process will be cancelled.
+// - max_output_tokens: The maximum number of tokens to generate.
+// - return_raw_decode_tokens: Whether to return the raw vector of sampled token
+// ids.
 absl::StatusOr<Responses> DecodeCustomSampling(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
     Sampler& sampler, litert::TensorBuffer decoded_ids, Constraint* constraint,
     std::optional<BenchmarkInfo>& benchmark_info,
     std::atomic<bool>* cancelled = nullptr,
-    int max_output_tokens = std::numeric_limits<int>::max());
+    int max_output_tokens = std::numeric_limits<int>::max(),
+    bool return_raw_decode_tokens = false);
 
 // Runs the pipeline to decode the input prompt. The function is similar to
 // DecodeCustomSampling, but it outputs the result using the callback to
@@ -108,6 +120,9 @@ absl::StatusOr<Responses> DecodeCustomSampling(
 // - callback: The inference callback to receive the intermediate results.
 // - cancelled: A pointer to an atomic boolean. If the boolean is set to true,
 //   the decoding process will be cancelled.
+// - max_output_tokens: The maximum number of tokens to generate.
+// - return_raw_decode_tokens: Whether to return the raw vector of sampled token
+// ids.
 absl::Status DecodeCustomSamplingStreaming(
     LlmExecutor& executor, Tokenizer& tokenizer,
     const StopTokenDetector& stop_token_detector, int num_output_candidates,
@@ -115,7 +130,8 @@ absl::Status DecodeCustomSamplingStreaming(
     std::optional<BenchmarkInfo>& benchmark_info,
     absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback,
     std::atomic<bool>* cancelled = nullptr,
-    int max_output_tokens = std::numeric_limits<int>::max());
+    int max_output_tokens = std::numeric_limits<int>::max(),
+    bool return_raw_decode_tokens = false);
 
 // Runs the pipeline to score the input prompt.
 // - executor: The executor that calls the core LLM model.

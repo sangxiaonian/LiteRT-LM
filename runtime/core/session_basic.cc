@@ -367,7 +367,8 @@ absl::StatusOr<Responses> SessionBasic::DecodeInternal(
                session_config_.GetNumOutputCandidates(),
                decode_config.GetConstraint(), benchmark_info_, &cancelled_,
                decode_config.GetMaxOutputTokens().value_or(
-                   session_config_.GetMaxOutputTokens())));
+                   session_config_.GetMaxOutputTokens()),
+               decode_config.GetReturnRawDecodeTokens()));
     return responses;
   } else {
     std::vector<int> decoded_ids(session_config_.GetNumOutputCandidates(),
@@ -384,7 +385,8 @@ absl::StatusOr<Responses> SessionBasic::DecodeInternal(
                              decode_config.GetConstraint(), benchmark_info_,
                              &cancelled_,
                              decode_config.GetMaxOutputTokens().value_or(
-                                 session_config_.GetMaxOutputTokens())));
+                                 session_config_.GetMaxOutputTokens()),
+                             decode_config.GetReturnRawDecodeTokens()));
     return responses;
   }
 }
@@ -398,7 +400,8 @@ absl::Status SessionBasic::DecodeInternalStreaming(
         session_config_.GetNumOutputCandidates(), decode_config.GetConstraint(),
         benchmark_info_, std::move(callback), &cancelled_,
         decode_config.GetMaxOutputTokens().value_or(
-            session_config_.GetMaxOutputTokens())));
+            session_config_.GetMaxOutputTokens()),
+        decode_config.GetReturnRawDecodeTokens()));
   } else {
     std::vector<int> decoded_ids(session_config_.GetNumOutputCandidates(),
                                  last_prefill_token_id_);
@@ -413,7 +416,8 @@ absl::Status SessionBasic::DecodeInternalStreaming(
         std::move(decoded_ids_buffer), decode_config.GetConstraint(),
         benchmark_info_, std::move(callback), &cancelled_,
         decode_config.GetMaxOutputTokens().value_or(
-            session_config_.GetMaxOutputTokens())));
+            session_config_.GetMaxOutputTokens()),
+        decode_config.GetReturnRawDecodeTokens()));
   }
   return absl::OkStatus();
 }

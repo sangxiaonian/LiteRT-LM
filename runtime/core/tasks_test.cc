@@ -194,18 +194,58 @@ TEST_F(TasksTest, DecodeSucceed) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto task_responses = Tasks::Decode(
-      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor_, *tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
-  EXPECT_OK(task_responses);
-  EXPECT_EQ(task_responses->GetTaskState(), TaskState::kDone);
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
-  EXPECT_EQ(task_responses->GetTexts().size(), 1);
-  EXPECT_EQ(task_responses->GetTexts()[0], " How's it going?");
+  EXPECT_EQ(task_responses.GetTexts().size(), 1);
+  EXPECT_EQ(task_responses.GetTexts()[0], " How's it going?");
+}
+
+TEST_F(TasksTest, DecodeSucceedWithRawTokens) {
+  std::optional<BenchmarkInfo> benchmark_info;
+
+  // Run prefill first.
+  std::vector<int> prefill_token_ids = {2, 90, 547, 58, 735, 210, 466, 2294};
+  ASSERT_OK_AND_ASSIGN(auto token_ids_buffer,
+                       tokenizer_->TokenIdsToTensorBuffer(prefill_token_ids));
+  ExecutorTextData text_data(std::move(token_ids_buffer));
+  ExecutorInputs inputs(std::move(text_data), std::nullopt, std::nullopt);
+  auto prefill_responses = Tasks::Prefill(
+      *executor_, inputs, /*wait_for_completion=*/true, benchmark_info);
+  EXPECT_OK(prefill_responses);
+
+  constexpr int kNumOutputCandidates = 1;
+  StopTokenDetector stop_token_detector(kNumOutputCandidates);
+  EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
+  absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
+
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor_, *tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr,
+                    /*max_output_tokens=*/std::numeric_limits<int>::max(),
+                    /*return_raw_decode_tokens=*/true));
+
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
+  EXPECT_EQ(task_responses.GetTexts().size(), 1);
+  EXPECT_EQ(task_responses.GetTexts()[0], " How's it going?");
+  EXPECT_TRUE(task_responses.GetRawDecodeTokens().has_value());
+  // Expected decode_tokens are {{224}, {24}, {8}, {66}, {246}, {18}, {2295},
+  // {2294}} in fake executor Expect that they are all captured for candidate 0.
+  EXPECT_EQ(task_responses.GetRawDecodeTokens()->size(), 1);
+  EXPECT_THAT((*task_responses.GetRawDecodeTokens())[0],
+              testing::ElementsAre(224, 24, 8, 66, 246, 18, 2295, 2294));
 }
 
 TEST_F(TasksTest, DecodeWithTwoStopTokens) {
@@ -226,16 +266,17 @@ TEST_F(TasksTest, DecodeWithTwoStopTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2295, 2294}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto responses = Tasks::Decode(
-      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
-  EXPECT_OK(responses);
+  ASSERT_OK_AND_ASSIGN(
+      auto responses,
+      Tasks::Decode(*executor_, *tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
   // The response is " How's it going" since "?!" is the stop token which is
   // not included in the response.
-  EXPECT_EQ(responses->GetTexts().size(), 1);
-  EXPECT_EQ(responses->GetTexts()[0], " How's it going");
+  EXPECT_EQ(responses.GetTexts().size(), 1);
+  EXPECT_EQ(responses.GetTexts()[0], " How's it going");
 }
 
 TEST_F(TasksTest, DecodeReachMaxNumTokens) {
@@ -258,17 +299,18 @@ TEST_F(TasksTest, DecodeReachMaxNumTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto task_responses = Tasks::Decode(
-      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor_, *tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
-  EXPECT_OK(task_responses);
-  EXPECT_EQ(task_responses->GetTaskState(), TaskState::kMaxNumTokensReached);
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kMaxNumTokensReached);
   // The response is truncated at the max number of tokens.
-  EXPECT_EQ(task_responses->GetTexts().size(), 1);
-  EXPECT_EQ(task_responses->GetTexts()[0], " How's");
+  EXPECT_EQ(task_responses.GetTexts().size(), 1);
+  EXPECT_EQ(task_responses.GetTexts()[0], " How's");
 }
 
 TEST_F(TasksTest, DecodeWithMultipleOutputCandidates) {
@@ -300,18 +342,19 @@ TEST_F(TasksTest, DecodeWithMultipleOutputCandidates) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto task_responses = Tasks::Decode(
-      *executor_, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor_, *tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
-  EXPECT_OK(task_responses);
-  EXPECT_EQ(task_responses->GetTaskState(), TaskState::kDone);
-  EXPECT_EQ(task_responses->GetTexts().size(), 3);
-  EXPECT_EQ(task_responses->GetTexts()[0], " How's it going?");
-  EXPECT_EQ(task_responses->GetTexts()[1], " Hello World");
-  EXPECT_EQ(task_responses->GetTexts()[2], " How's it going?");
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
+  EXPECT_EQ(task_responses.GetTexts().size(), 3);
+  EXPECT_EQ(task_responses.GetTexts()[0], " How's it going?");
+  EXPECT_EQ(task_responses.GetTexts()[1], " Hello World");
+  EXPECT_EQ(task_responses.GetTexts()[2], " How's it going?");
 }
 
 TEST_F(TasksTest, DecodeWithoutPrefillFailed) {
@@ -362,16 +405,17 @@ TEST_F(TasksTest, DecodeWithConstrainedDecoding) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({0}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto task_responses = Tasks::Decode(
-      *executor, *tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt, constraint.get(),
-      /*decoded_ids=*/std::nullopt, /*callback=*/callback,
-      /*cancelled=*/nullptr);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor, *tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt, constraint.get(),
+                    /*decoded_ids=*/std::nullopt, /*callback=*/callback,
+                    /*cancelled=*/nullptr));
 
-  EXPECT_OK(task_responses);
-  EXPECT_EQ(task_responses->GetTaskState(), TaskState::kDone);
-  EXPECT_EQ(task_responses->GetTexts().size(), 1);
-  EXPECT_EQ(task_responses->GetTexts()[0], " How's it");
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
+  EXPECT_EQ(task_responses.GetTexts().size(), 1);
+  EXPECT_EQ(task_responses.GetTexts()[0], " How's it");
 }
 
 TEST_F(TasksTest, DecodeStreaming) {
@@ -545,18 +589,19 @@ TEST_F(TasksTest, DecodeBytePairEncodingTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({2294}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto task_responses = Tasks::Decode(
-      *executor_, *tokenizer, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor_, *tokenizer, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
-  EXPECT_OK(task_responses);
-  EXPECT_EQ(task_responses->GetTaskState(), TaskState::kDone);
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
   // The response is " How's it going?" since "!" is the stop token which is
   // not included in the response.
-  EXPECT_EQ(task_responses->GetTexts().size(), 1);
-  EXPECT_EQ(task_responses->GetTexts()[0], " How's it going?");
+  EXPECT_EQ(task_responses.GetTexts().size(), 1);
+  EXPECT_EQ(task_responses.GetTexts()[0], " How's it going?");
 }
 
 TEST_F(TasksTest, DecodeStopTokenIsPartialBytePairEncodingTokens) {
@@ -589,18 +634,19 @@ TEST_F(TasksTest, DecodeStopTokenIsPartialBytePairEncodingTokens) {
   EXPECT_OK(stop_token_detector.AddStopTokenSequence({224, 24}));
   absl::AnyInvocable<void(absl::StatusOr<Responses>)> callback = nullptr;
 
-  auto task_responses = Tasks::Decode(
-      *executor_, *tokenizer, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor_, *tokenizer, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
-  EXPECT_OK(task_responses);
-  EXPECT_EQ(task_responses->GetTaskState(), TaskState::kDone);
+  EXPECT_EQ(task_responses.GetTaskState(), TaskState::kDone);
   // Empty response as the stop token is encoded as a partial byte pair encoding
   // token.
-  EXPECT_EQ(task_responses->GetTexts().size(), 1);
-  EXPECT_EQ(task_responses->GetTexts()[0], "");
+  EXPECT_EQ(task_responses.GetTexts().size(), 1);
+  EXPECT_EQ(task_responses.GetTexts()[0], "");
 }
 
 TEST_F(TasksTest, DecodeConsecutiveByteTokens) {
@@ -639,13 +685,13 @@ TEST_F(TasksTest, DecodeConsecutiveByteTokens) {
         }
       };
 
-  auto task_responses = Tasks::Decode(
-      *executor, *gemma3_tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
-
-  EXPECT_OK(task_responses);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor, *gemma3_tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
   // 432 -> buffered, output ""
   // 414 -> flushed "°"
@@ -690,13 +736,13 @@ TEST_F(TasksTest, DecodeConsecutiveByteTokensWithNonByteTokens) {
         }
       };
 
-  auto task_responses = Tasks::Decode(
-      *executor, *gemma3_tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
-
-  EXPECT_OK(task_responses);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor, *gemma3_tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
   // 345 -> "k"
   // 347 -> "m"
@@ -746,13 +792,13 @@ TEST_F(TasksTest, DecodeConsecutiveByteTokensWithPartialBpeIgnored) {
         }
       };
 
-  auto task_responses = Tasks::Decode(
-      *executor, *gemma3_tokenizer_, stop_token_detector, kNumOutputCandidates,
-      benchmark_info, /*sampler=*/std::nullopt,
-      /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
-      /*callback=*/callback, /*cancelled=*/nullptr);
-
-  EXPECT_OK(task_responses);
+  ASSERT_OK_AND_ASSIGN(
+      auto task_responses,
+      Tasks::Decode(*executor, *gemma3_tokenizer_, stop_token_detector,
+                    kNumOutputCandidates, benchmark_info,
+                    /*sampler=*/std::nullopt,
+                    /*constraint=*/nullptr, /*decoded_ids=*/std::nullopt,
+                    /*callback=*/callback, /*cancelled=*/nullptr));
 
   // 345 -> "k"
   // 347 -> "m"

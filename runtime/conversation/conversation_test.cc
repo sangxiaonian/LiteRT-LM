@@ -616,6 +616,70 @@ TEST_P(ConversationTest, SendMultipleMessagesWithHistory) {
                                    assistant_message_2));
 }
 
+TEST_P(ConversationTest, SendMessageDebugCapture) {
+  // Set up mock Session.
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+
+  // Create Conversation.
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetEnableConstrainedDecoding(enable_constrained_decoding_)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .SetPrefillPrefaceOnInit(prefill_preface_on_init_)
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+
+  JsonMessage user_message = {{"role", "user"}, {"content", "How are you?"}};
+  absl::string_view expected_input_text =
+      "<start_of_turn>user\n"
+      "How are you?<end_of_turn>\n";
+
+  EXPECT_CALL(*mock_session_ptr, RunPrefill(testing::_))
+      .WillOnce(testing::Return(absl::OkStatus()));
+
+  // The Responses object needs to return some raw tokens
+  Responses responses(TaskState::kProcessing, {"I am good."});
+  const std::vector<std::vector<int>> simulated_raw_tokens = {{101, 102, 103}};
+  responses.GetMutableRawDecodeTokens() = simulated_raw_tokens;
+  EXPECT_CALL(*mock_session_ptr, RunDecode(testing::_))
+      .WillOnce(testing::Return(responses));
+
+  // Expect no debug output if it's off
+  ASSERT_OK(conversation->SendMessage(
+      user_message, {.debug_verbosity = DebugVerbosity::kOff}));
+  EXPECT_FALSE(conversation->GetLastInputDebugData().has_value());
+  EXPECT_FALSE(conversation->GetLastOutputDebugData().has_value());
+
+  // Test with kBoth
+  EXPECT_CALL(*mock_session_ptr, RunPrefill(testing::_))
+      .WillOnce(testing::Return(absl::OkStatus()));
+  EXPECT_CALL(*mock_session_ptr, RunDecode(testing::_))
+      .WillOnce(testing::Return(responses));
+
+  ASSERT_OK(conversation->SendMessage(
+      user_message, {.debug_verbosity = DebugVerbosity::kBoth}));
+
+  auto input_debug = conversation->GetLastInputDebugData();
+  ASSERT_TRUE(input_debug.has_value());
+  EXPECT_TRUE(input_debug->text.has_value());
+  EXPECT_EQ(input_debug->text.value(), expected_input_text);
+  // The test mock doesn't trigger the real Tokenizer, so input_debug->token_ids
+  // is expected to be empty here
+
+  auto output_debug = conversation->GetLastOutputDebugData();
+  ASSERT_TRUE(output_debug.has_value());
+  EXPECT_TRUE(output_debug->text.has_value());
+  EXPECT_EQ(output_debug->text.value(), "I am good.");
+  EXPECT_TRUE(output_debug->token_ids.has_value());
+  EXPECT_THAT(output_debug->token_ids.value(),
+              testing::ElementsAre(101, 102, 103));
+}
+
 TEST_P(ConversationTest, RunTextScoring) {
   // Set up mock Session.
   auto mock_session = CreateMockSession();
@@ -981,6 +1045,230 @@ TEST_P(ConversationTest, SendMultipleMessagesAsyncWithHistory) {
       testing::ElementsAre(user_message_1, assistant_message_1_for_confirm,
                            user_messages[0], user_messages[1],
                            assistant_message_2_for_confirm));
+}
+
+TEST_P(ConversationTest, SendMessageAsyncDebugCapture) {
+  // Set up mock Session.
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+
+  // Create Conversation.
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetEnableConstrainedDecoding(enable_constrained_decoding_)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .SetPrefillPrefaceOnInit(prefill_preface_on_init_)
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+
+  JsonMessage user_message = {{"role", "user"}, {"content", "How are you?"}};
+  absl::string_view expected_input_text =
+      "<start_of_turn>user\n"
+      "How are you?<end_of_turn>\n";
+
+  EXPECT_CALL(*mock_session_ptr, RunPrefillAsync(testing::_, testing::_))
+      .WillOnce([](const std::vector<InputData>& contents,
+                   absl::AnyInvocable<void(absl::StatusOr<Responses>)>
+                       user_callback) {
+        user_callback(Responses(TaskState::kDone));
+        return nullptr;
+      });
+
+  EXPECT_CALL(*mock_session_ptr, RunDecodeAsync(testing::_, testing::_))
+      .WillOnce(
+          [](absl::AnyInvocable<void(absl::StatusOr<Responses>)> user_callback,
+             const DecodeConfig& decode_config) {
+            Responses processing_responses(TaskState::kProcessing,
+                                           {"I am good."});
+            const std::vector<std::vector<int>> simulated_raw_tokens = {
+                {101, 102, 103}};
+            processing_responses.GetMutableRawDecodeTokens() =
+                simulated_raw_tokens;
+            user_callback(processing_responses);
+
+            Responses done_responses(TaskState::kDone);
+            user_callback(done_responses);
+            return nullptr;
+          });
+
+  absl::Notification done;
+  ASSERT_OK(conversation->SendMessageAsync(
+      user_message,
+      [&done](absl::StatusOr<Message> msg) {
+        if (msg.ok()) {
+          if (auto json_msg = std::get_if<JsonMessage>(&msg.value());
+              json_msg->is_null()) {
+            done.Notify();
+          }
+        } else {
+          done.Notify();
+        }
+      },
+      {.debug_verbosity = DebugVerbosity::kBoth}));
+
+  done.WaitForNotificationWithTimeout(absl::Seconds(10));
+
+  auto input_debug = conversation->GetLastInputDebugData();
+  ASSERT_TRUE(input_debug.has_value());
+  EXPECT_TRUE(input_debug->text.has_value());
+  EXPECT_EQ(input_debug->text.value(), expected_input_text);
+
+  auto output_debug = conversation->GetLastOutputDebugData();
+  ASSERT_TRUE(output_debug.has_value());
+  if (output_debug->text.has_value()) {
+    EXPECT_EQ(output_debug->text.value(), "I am good.");
+  }
+  if (output_debug->token_ids.has_value()) {
+    EXPECT_THAT(output_debug->token_ids.value(),
+                testing::ElementsAre(101, 102, 103));
+  }
+}
+
+TEST_P(ConversationTest, SendMessageAsyncDebugCaptureTokensOnly) {
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetEnableConstrainedDecoding(enable_constrained_decoding_)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .SetPrefillPrefaceOnInit(prefill_preface_on_init_)
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+
+  JsonMessage user_message = {{"role", "user"}, {"content", "How are you?"}};
+
+  EXPECT_CALL(*mock_session_ptr, RunPrefillAsync(testing::_, testing::_))
+      .WillOnce([](const std::vector<InputData>& contents,
+                   absl::AnyInvocable<void(absl::StatusOr<Responses>)>
+                       user_callback) {
+        user_callback(Responses(TaskState::kDone));
+        return nullptr;
+      });
+
+  EXPECT_CALL(*mock_session_ptr, RunDecodeAsync(testing::_, testing::_))
+      .WillOnce(
+          [](absl::AnyInvocable<void(absl::StatusOr<Responses>)> user_callback,
+             const DecodeConfig& decode_config) {
+            Responses processing_responses(TaskState::kProcessing,
+                                           {"I am good."});
+            const std::vector<std::vector<int>> simulated_raw_tokens = {
+                {101, 102, 103}};
+            processing_responses.GetMutableRawDecodeTokens() =
+                simulated_raw_tokens;
+            user_callback(processing_responses);
+            user_callback(Responses(TaskState::kDone));
+            return nullptr;
+          });
+
+  absl::Notification done;
+  ASSERT_OK(conversation->SendMessageAsync(
+      user_message,
+      [&done](absl::StatusOr<Message> msg) {
+        if (msg.ok()) {
+          if (auto json_msg = std::get_if<JsonMessage>(&msg.value());
+              json_msg->is_null())
+            done.Notify();
+        } else {
+          done.Notify();
+        }
+      },
+      {.debug_verbosity = DebugVerbosity::kTokens}));
+
+  done.WaitForNotificationWithTimeout(absl::Seconds(10));
+
+  auto input_debug = conversation->GetLastInputDebugData();
+  ASSERT_TRUE(input_debug.has_value());
+  EXPECT_FALSE(input_debug->text.has_value());
+
+  auto output_debug = conversation->GetLastOutputDebugData();
+  ASSERT_TRUE(output_debug.has_value());
+  EXPECT_FALSE(output_debug->text.has_value());
+  if (output_debug->token_ids.has_value()) {
+    EXPECT_THAT(output_debug->token_ids.value(),
+                testing::ElementsAre(101, 102, 103));
+  }
+}
+
+TEST_P(ConversationTest, SendMessageAsyncDebugCaptureTextOnly) {
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetEnableConstrainedDecoding(enable_constrained_decoding_)
+          .SetOverwritePromptTemplate(PromptTemplate(kTestJinjaPromptTemplate))
+          .SetPrefillPrefaceOnInit(prefill_preface_on_init_)
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+
+  JsonMessage user_message = {{"role", "user"}, {"content", "How are you?"}};
+  absl::string_view expected_input_text =
+      "<start_of_turn>user\n"
+      "How are you?<end_of_turn>\n";
+
+  EXPECT_CALL(*mock_session_ptr, RunPrefillAsync(testing::_, testing::_))
+      .WillOnce([](const std::vector<InputData>& contents,
+                   absl::AnyInvocable<void(absl::StatusOr<Responses>)>
+                       user_callback) {
+        user_callback(Responses(TaskState::kDone));
+        return nullptr;
+      });
+
+  EXPECT_CALL(*mock_session_ptr, RunDecodeAsync(testing::_, testing::_))
+      .WillOnce(
+          [](absl::AnyInvocable<void(absl::StatusOr<Responses>)> user_callback,
+             const DecodeConfig& decode_config) {
+            Responses processing_responses(TaskState::kProcessing,
+                                           {"I am good."});
+            const std::vector<std::vector<int>> simulated_raw_tokens = {
+                {101, 102, 103}};
+            processing_responses.GetMutableRawDecodeTokens() =
+                simulated_raw_tokens;
+            user_callback(processing_responses);
+            user_callback(Responses(TaskState::kDone));
+            return nullptr;
+          });
+
+  absl::Notification done;
+  ASSERT_OK(conversation->SendMessageAsync(
+      user_message,
+      [&done](absl::StatusOr<Message> msg) {
+        if (msg.ok()) {
+          if (auto json_msg = std::get_if<JsonMessage>(&msg.value());
+              json_msg->is_null())
+            done.Notify();
+        } else {
+          done.Notify();
+        }
+      },
+      {.debug_verbosity = DebugVerbosity::kText}));
+
+  done.WaitForNotificationWithTimeout(absl::Seconds(10));
+
+  auto input_debug = conversation->GetLastInputDebugData();
+  ASSERT_TRUE(input_debug.has_value());
+  EXPECT_TRUE(input_debug->text.has_value());
+  EXPECT_EQ(input_debug->text.value(), expected_input_text);
+
+  auto output_debug = conversation->GetLastOutputDebugData();
+  ASSERT_TRUE(output_debug.has_value());
+  if (output_debug->text.has_value()) {
+    EXPECT_EQ(output_debug->text.value(), "I am good.");
+  }
+  EXPECT_FALSE(output_debug->token_ids.has_value());
 }
 
 TEST_P(ConversationTest, SendMessageWithPreface) {

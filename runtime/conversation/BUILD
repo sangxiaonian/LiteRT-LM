@@ -26,10 +26,7 @@ cc_library(
     name = "io_types",
     srcs = ["io_types.cc"],
     hdrs = ["io_types.h"],
-    deps = [
-        "@com_google_absl//absl/status",
-        "@nlohmann_json//:json",
-    ],
+    deps = ["@nlohmann_json//:json"],
 )
 
 cc_library(
@@ -106,7 +103,6 @@ cc_library(
         "@com_google_absl//absl/time",
         "@nlohmann_json//:json",
         "//runtime/components:prompt_template",
-        "//runtime/components:tokenizer",
         "//runtime/components/constrained_decoding:constraint",
         "//runtime/components/constrained_decoding:constraint_provider",
         "//runtime/components/constrained_decoding:constraint_provider_config",
@@ -118,6 +114,7 @@ cc_library(
         "//runtime/engine:engine_settings",
         "//runtime/engine:io_types",
         "//runtime/proto:llm_model_type_cc_proto",
+        "//runtime/util:convert_tensor_buffer",
         "//runtime/util:litert_status_util",
         "//runtime/util:model_type_utils",
     ],
