@@ -66,15 +66,14 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/util:convert_tensor_buffer",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -134,14 +133,13 @@ cc_library(
     hdrs = ["sampler.h"],
     deps = [
         "@com_google_absl//absl/status",
+        "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/proto:sampler_params_cc_proto",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -313,19 +311,18 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@litert//litert/cc:litert_element_type",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/proto:sampler_params_cc_proto",
         "//runtime/util:convert_tensor_buffer",
         "//runtime/util:tensor_buffer_util",
         "@litert//tflite/types:half",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_element_type",
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -366,6 +363,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_tensor_buffer",
         "@litert//litert/cc/internal:litert_shared_library",
         "//runtime/executor:executor_settings_base",
         "//runtime/executor:llm_executor_settings",
@@ -373,11 +371,9 @@ cc_library(
         "//runtime/util:litert_status_util",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -435,13 +431,12 @@ cc_test(
         "//runtime/executor:executor_settings_base",
         "//runtime/proto:sampler_params_cc_proto",
         "//runtime/util:test_utils",
+        "@litert//litert/cc:litert_environment",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_environment",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -460,6 +455,9 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_buffer_ref",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_model",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:litert_lm_loader",
         "//runtime/util:litert_status_util",
@@ -473,13 +471,9 @@ cc_library(
         "//conditions:default": [":sentencepiece_tokenizer"],
     }) + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_buffer_ref",
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_model",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -492,15 +486,14 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_model",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:scoped_file",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_model",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -521,6 +514,9 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_buffer_ref",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_model",
         "//runtime/proto:llm_metadata_cc_proto",
         "//runtime/util:litert_status_util",
         "//runtime/util:metadata_util",
@@ -528,13 +524,9 @@ cc_library(
         "//runtime/util:scoped_file",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_buffer_ref",
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_model",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -593,16 +585,15 @@ cc_library(
         "//runtime/util:litert_status_util",
         "//runtime/util:lora_data",
         "//runtime/util:lora_util",
+        "@litert//litert/cc:litert_compiled_model",
+        "@litert//litert/cc:litert_macros",
+        "@litert//litert/cc:litert_model",
+        "@litert//litert/cc:litert_tensor_buffer",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_compiled_model",
-            "@litert//litert/cc:litert_macros",
-            "@litert//litert/cc:litert_model",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -637,18 +628,17 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
+        "@litert//litert/cc:litert_compiled_model",
+        "@litert//litert/cc:litert_model",
+        "@litert//litert/cc:litert_tensor_buffer",
         "//runtime/executor:executor_settings_base",
         "//runtime/util:litert_status_util",
         "//runtime/util:lora_data",
     ] + select({
         "@litert//litert:litert_link_capi_so": [
-            "@litert//litert/cc:litert_api_with_dynamic_runtime",
+            "@litert//litert/c:litert_runtime_c_api_shared_lib",
         ],
-        "//conditions:default": [
-            "@litert//litert/cc:litert_compiled_model",
-            "@litert//litert/cc:litert_model",
-            "@litert//litert/cc:litert_tensor_buffer",
-        ],
+        "//conditions:default": [],
     }),
 )
 
