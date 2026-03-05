@@ -425,8 +425,13 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
     }
     LITERT_ASSIGN_OR_RETURN(auto positions_tensor_type,
                             input_maps.at(kPositionsXy).TensorType());
-    num_patches = positions_tensor_type.Layout().Dimensions()[1] /
-                  *vision_executor_properties_.patch_num_shrink_factor;
+    const int& num_patches_from_input =
+        positions_tensor_type.Layout().Dimensions()[1];
+    const int& patch_num_shrink_factor =
+        vision_executor_properties_.patch_num_shrink_factor.value();
+    // Round up the number of patches so we have at least one patch.
+    num_patches = (num_patches_from_input + patch_num_shrink_factor - 1) /
+                  patch_num_shrink_factor;
   }
 
   auto& adapter_input_buffers = vision_adapter_->GetMutableInputBuffers();
