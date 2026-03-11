@@ -51,6 +51,17 @@
     return std::move(status_or_value).value();                      \
   }())
 
+#define STATUS_OR_THROW(status)                                     \
+  {                                                                 \
+    auto status_value = (status);                                   \
+    if (!status_value.ok()) {                                       \
+      std::stringstream ss;                                         \
+      ss << __FILE__ << ":" << __LINE__ << ": " << __func__ << ": " \
+         << status_value;                                           \
+      throw std::runtime_error(ss.str());                           \
+    }                                                               \
+  }
+
 namespace litert::lm {
 
 namespace nb = nanobind;
@@ -84,6 +95,15 @@ void SetBackendAttr(nb::object& py_engine, const nb::handle& backend_handle) {
   } else {
     py_engine.attr("backend") = backend_handle;
   }
+}
+
+// Helper to convert C++ Responses to Python Responses dataclass.
+nb::object ToPyResponses(const Responses& responses) {
+  nb::object py_responses_class = nb::module_::import_(
+                                      "litert_lm.python.interfaces")
+                                      .attr("Responses");
+  return py_responses_class(responses.GetTexts(), responses.GetScores(),
+                             responses.GetTokenLengths());
 }
 
 // Note: Consider move to C++ API.
@@ -385,7 +405,64 @@ NB_MODULE(litert_lm_ext, module) {
 
         nb::object py_conversation = nb::cast(std::move(conversation));
         return py_conversation;
-      });
+      })
+      .def("create_session", [](Engine& self) {
+        return VALUE_OR_THROW(
+            self.CreateSession(SessionConfig::CreateDefault()));
+      }, "Creates a new session for this engine.")
+      ;
+
+  nb::class_<Engine::Session>(module, "Session", nb::dynamic_attr(),
+                              "Session is responsible for hosting the "
+                              "internal state (e.g. conversation history) of "
+                              "each separate interaction with LLM.")
+      // Support for Python context managers (with statement).
+      // __enter__ returns the object itself.
+      .def("__enter__", [](nb::handle self) { return self; })
+      // __exit__ immediately destroys the underlying C++ instance to free
+      // resources deterministically, instead of waiting for garbage collection.
+      .def(
+          "__exit__",
+          [](nb::handle self, nb::handle exc_type, nb::handle exc_value,
+             nb::handle traceback) { nb::inst_destruct(self); },
+          nb::arg("exc_type").none(), nb::arg("exc_value").none(),
+          nb::arg("traceback").none())
+      .def(
+          "run_prefill",
+          [](Engine::Session& self, const std::vector<std::string>& contents) {
+            std::vector<InputData> input_data;
+            for (const auto& text : contents) {
+              input_data.emplace_back(InputText(text));
+            }
+            STATUS_OR_THROW(self.RunPrefill(input_data));
+          },
+          nb::arg("contents"),
+          "Adds the input prompt/query to the model for starting the "
+          "prefilling process. Note that the user can break down their "
+          "prompt/query into multiple chunks and call this function multiple "
+          "times.")
+      .def(
+          "run_decode",
+          [](Engine::Session& self) {
+            return ToPyResponses(VALUE_OR_THROW(self.RunDecode()));
+          },
+          "Starts the decoding process for the model to predict the response "
+          "based on the input prompt/query added after using run_prefill "
+          "function.")
+      .def(
+          "run_text_scoring",
+          [](Engine::Session& self,
+             const std::vector<std::string>& target_text,
+             bool store_token_lengths) {
+            std::vector<absl::string_view> target_text_views;
+            for (const auto& text : target_text) {
+              target_text_views.push_back(text);
+            }
+            return ToPyResponses(VALUE_OR_THROW(
+                self.RunTextScoring(target_text_views, store_token_lengths)));
+          },
+          nb::arg("target_text"), nb::arg("store_token_lengths") = false,
+          "Scores the target text after the prefill process is done.");
 
   nb::class_<Conversation>(module, "Conversation", nb::dynamic_attr())
       // Support for Python context managers (with statement).
