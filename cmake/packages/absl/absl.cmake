@@ -32,7 +32,7 @@ if(NOT EXISTS "${ABSL_CONFIG_CMAKE_FILE}")
     GIT_REPOSITORY
       https://github.com/abseil/abseil-cpp
     GIT_TAG
-      987c57f325f7fa8472fa84e1f885f7534d391b0d
+      20260107.1
     PREFIX
       ${ABSL_EXT_PREFIX}
     PATCH_COMMAND

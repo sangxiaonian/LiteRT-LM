@@ -307,25 +307,23 @@ target_link_libraries(runtime_executor_llm_executor_settings
 )
 
 
-# add_litertlm_library(runtime_executor_llm_executor_settings_utils STATIC
-#   llm_executor_settings_utils.cc
-# )
-# add_library(LiteRTLM::Runtime::Executor::LLMExecutorSettingsUtils ALIAS runtime_executor_llm_executor_settings_utils)
+add_litertlm_library(runtime_executor_common_utils STATIC
+  common_utils.cc
+)
+add_library(LiteRTLM::Runtime::Executor::CommonUtils ALIAS runtime_executor_common_utils)
 
-# target_include_directories(runtime_executor_llm_executor_settings_utils
-#   PUBLIC
-#     ${GENERATED_SRC_DIR}
-#     ${LITERT_INCLUDE_DIR}
-#     ${LITERTLM_INCLUDE_PATHS}
-# )
+target_include_directories(runtime_executor_common_utils
+  PUBLIC
+    ${GENERATED_SRC_DIR}
+    ${LITERT_INCLUDE_DIR}
+    ${LITERTLM_INCLUDE_PATHS}
+)
 
-# target_link_libraries(runtime_executor_llm_executor_settings_utils
-#   PUBLIC
-#     LiteRTLM::Runtime::Executor::ExecutorSettingsBase
-#     runtime_util_litert_status_util
-#     runtime_util_logging
-#     LITERTLM_DEPS
-# )
+target_link_libraries(runtime_executor_common_utils
+  PUBLIC
+    runtime_util_litert_status_util
+    LITERTLM_DEPS
+)
 
 
 
@@ -542,12 +540,37 @@ target_include_directories(runtime_executor_vision_executor_settings
 target_link_libraries(runtime_executor_vision_executor_settings
   PUBLIC
     LiteRTLM::Runtime::Executor::ExecutorSettingsBase
-    runtime_util_litert_status_util
+    LiteRTLM::Runtime::Util::LiteRtStatusUtil
+    LITERTLM_DEPS
+)
+
+
+# ==============================================================================
+# 21. Vision Executor Utils
+# ==============================================================================
+
+add_litertlm_library(runtime_executor_vision_executor_utils STATIC
+  vision_executor_utils.cc
+)
+add_library(LiteRTLM::Runtime::Executor::Vision::Utils ALIAS runtime_executor_vision_executor_utils)
+
+target_include_directories(runtime_executor_vision_executor_utils
+  PUBLIC
+    ${GENERATED_SRC_DIR}
+    ${LITERT_INCLUDE_DIR}
+    ${LITERTLM_INCLUDE_PATHS}
+)
+
+target_link_libraries(runtime_executor_vision_executor_utils
+  PUBLIC
+    LiteRTLM::Runtime::Engine::IoTypes
+    LiteRTLM::Runtime::Components::ModelResources::Interface
+    LiteRTLM::Runtime::Util::LiteRtStatusUtil
     LITERTLM_DEPS
 )
 
 # ==============================================================================
-# 21. Vision LiteRT Compiled Model Executor
+# 22. Vision LiteRT Compiled Model Executor
 # ==============================================================================
 add_litertlm_library(runtime_executor_vision_litert_compiled_model_executor STATIC
   vision_litert_compiled_model_executor.cc
@@ -576,13 +599,13 @@ target_link_libraries(runtime_executor_vision_litert_compiled_model_executor
 )
 
 # ==============================================================================
-# 22. Default Static GPU Accelerator
+# 23. Default Static GPU Accelerator
 # ==============================================================================
 add_litertlm_library(runtime_executor_default_static_gpu_accelerator INTERFACE)
 # Note: Empty target for CPU builds, but required for linking consistency.
 
 # ==============================================================================
-# 23. Folder Facade
+# 24. Folder Facade
 # ==============================================================================
 add_library(runtime_executor_libs INTERFACE)
 add_library(LiteRTLM::Runtime::Executor ALIAS runtime_executor_libs)
@@ -598,7 +621,6 @@ target_link_libraries(runtime_executor_libs INTERFACE
   LiteRTLM::Runtime::Executor::LLMExecutorIoTypes
   LiteRTLM::Runtime::Executor::LLMExecutorProcessedTokens
   LiteRTLM::Runtime::Executor::LLMExecutorSettings
-  # LiteRTLM::Runtime::Executor::LLMExecutorSettingsUtils
   LiteRTLM::Runtime::Executor::LLMLiteRTCompiledModelExecutorFactory
   LiteRTLM::Runtime::Executor::LLMLiteRTCompiledModelCacheUtils
   LiteRTLM::Runtime::Executor::LLM::CompiledModelExecutor

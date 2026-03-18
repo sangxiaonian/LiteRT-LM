@@ -16,6 +16,7 @@
 set(LITERT_TARGET_MAP
     "litert::cc_api=${LITERT_BUILD_DIR}/cc/liblitert_cc_api.a"
     "litert::cc_options=${LITERT_BUILD_DIR}/cc/options/liblitert_cc_options.a"
+    "litert::cc_internal=${LITERT_BUILD_DIR}/cc/internal/liblitert_cc_internal.a"
     "litert::c_api=${LITERT_BUILD_DIR}/c/liblitert_c_api.a"
     "litert::c_options=${LITERT_BUILD_DIR}/c/options/liblitert_c_options.a"
     "litert::logging=${LITERT_BUILD_DIR}/c/liblitert_logging.a"
@@ -33,13 +34,4 @@ set(LITERT_TARGET_MAP
     "litert::qnn_wrappers=${LITERT_BUILD_DIR}/vendors/qualcomm/core/wrappers/libqnn_wrappers.a"
     "litert::qnn_builders=${LITERT_BUILD_DIR}/vendors/qualcomm/core/builders/libqnn_builders.a"
     "litert::qnn_core=${LITERT_BUILD_DIR}/vendors/qualcomm/core/libqnn_core.a"
-)
-
-
-set(_litert_exhaustive_targets
-    "litert::runtime"
-    "litert::c_api"
-    "litert::cc_api"
-    "litert::compiler_plugin"
-    "litert::qnn_manager"
 )

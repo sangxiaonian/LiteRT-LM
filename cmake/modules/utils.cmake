@@ -183,3 +183,12 @@ function(setup_external_install_structure prefix_path)
         endif()
     endforeach()
 endfunction()
+
+
+function(cmake_to_c_bool CMAKE_VAL OUTPUT_VAR)
+    if(${CMAKE_VAL})
+        set(${OUTPUT_VAR} 1 PARENT_SCOPE)
+    else()
+        set(${OUTPUT_VAR} 0 PARENT_SCOPE)
+    endif()
+endfunction()

@@ -25,7 +25,7 @@ env:
 jobs:
   presubmit:
     name: "Presubmit-CMake-Linux"
-    runs-on: ubuntu-latest
+    runs-on: LiteRT_Linux_x64
     container:
       image: ubuntu:24.04
 
@@ -45,9 +45,6 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install Python Dependencies
-        run: python3 -m pip install --break-system-packages pytest==8.3.4
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -58,7 +55,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p ./models
-          curl -L --retry 5 -H "Authorization: Bearer $HF_TOKEN" -o ${{ env.MODEL_PATH }} "${{ env.MODEL_URL }}"
+          echo "Downloading model from Hugging Face..."
+          curl -L --retry 5 -f \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            -o ${{ env.MODEL_PATH }} \
+            "${{ env.MODEL_URL }}"
           ls -lh ${{ env.MODEL_PATH }}
 
       - name: Cache FetchContent Deps
@@ -128,21 +129,9 @@ jobs:
       - name: Build
         run: cmake --build cmake/build --config Release --parallel $(nproc)
 
+      - name: Install pytest
+        run: python3 -m pip install --break-system-packages pytest==8.3.4
+
       - name: Run pytest
-        run: python3 -m pytest tools/test/ --model-path=${{ env.MODEL_PATH }} --build-system=cmake
+        run: pytest tools/test/ --model-path=${{ env.MODEL_PATH }} --build-system=cmake
 
-      - name: Save CCache on Failure
-        if: failure()
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt') }}
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-debug-artifacts
-          path: |
-            cmake/build/generated
-            cmake/build/**/CMakeCache.txt
-            retention-days: 1

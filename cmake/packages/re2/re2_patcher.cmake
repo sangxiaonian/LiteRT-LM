@@ -12,10 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set(PROTOBUF_TARGET_MAP
-  "protobuf::libprotobuf-lite=${PROTO_LIB_DIR}/libprotobuf-lite.a"
-  "protobuf::libprotobuf=${PROTO_LIB_DIR}/libprotobuf.a"
-  "protobuf::libprotoc=${PROTO_LIB_DIR}/libprotoc.a"
-  "protobuf::libupb=${PROTO_LIB_DIR}/libupb.a"
-  "protobuf::libutf8_validity=${PROTO_LIB_DIR}/libutf8_validity.a"
-)
+
+message(STATUS "[LiteRTLM] Patching RE2...")
+
+set(ROOT_LIST "${RE2_SRC_DIR}/CMakeLists.txt")
+
+if(EXISTS "${ROOT_LIST}")
+    file(READ "${ROOT_LIST}" ROOT_CONTENT)
+
+    string(REPLACE 
+        "set(RE2_CXX_VERSION cxx_std_17)" 
+        "set(RE2_CXX_VERSION cxx_std_20)" 
+        ROOT_CONTENT "${ROOT_CONTENT}"
+    )
+
+    file(WRITE "${ROOT_LIST}" "${ROOT_CONTENT}")
+    message(STATUS "[LiteRTLM] RE2 CMakeLists.txt patching successful.")
+else()
+    message(FATAL_ERROR "Could not find RE2 CMakeLists.txt at ${ROOT_LIST}")
+endif()

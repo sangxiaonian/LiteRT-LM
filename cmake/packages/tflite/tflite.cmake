@@ -25,6 +25,11 @@ set(TENSORFLOW_SOURCE_DIR   "${TFLITE_EXT_PREFIX}/src/tflite_external" CACHE INT
 set(TFLITE_STATIC_LIB       "${TFLITE_BUILD_DIR}/libtensorflow-lite.a" CACHE INTERNAL "")
 set(RUY_INCLUDE_DIR         "${EXTERNAL_PROJECT_BINARY_DIR}/tflite_external-build" CACHE INTERNAL "")
 
+set(XNNPACK_SOURCE_DIR "${TFLITE_BUILD_DIR}/xnnpack" CACHE INTERNAL "")
+set(XNNPACK_BINARY_DIR "${TFLITE_BUILD_DIR}/_deps/xnnpack-build" CACHE INTERNAL "")
+set(XNNPACK_INCLUDE_DIR "${TFLITE_BUILD_DIR}/xnnpack/include" CACHE INTERNAL "")
+set(XNNPACK_LIB_DIR "${TFLITE_BUILD_DIR}/_deps/xnnpack-build" CACHE INTERNAL "")
+
 setup_external_install_structure("${TFLITE_INSTALL_PREFIX}")
 
 if(NOT EXISTS "${TFLITE_STATIC_LIB}")
@@ -45,7 +50,7 @@ if(NOT EXISTS "${TFLITE_STATIC_LIB}")
             protobuf_external
             tokenizers-cpp_external
         GIT_REPOSITORY  https://github.com/tensorflow/tensorflow.git
-        GIT_TAG         061041963ead867e8f47fb63e153db3e61e3b20b
+        GIT_TAG         862baf45439c742ac3a9d43e88088943bd3a582d # Updated on 2026-03-18
         PREFIX          "${TFLITE_EXT_PREFIX}"
         SOURCE_SUBDIR   "tensorflow/lite"
 

@@ -89,6 +89,16 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.20 CACHE STRING "Required CMake policy version." FORCE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive" CACHE STRING "Required CXX flags" FORCE)
 
+option(LITERT_BUILD_CONFIG_DISABLE_GPU_VAL
+    "LiteRT definition to disable GPU in build config"
+    TRUE
+)
+
+option(LITERT_BUILD_CONFIG_DISABLE_NPU_VAL
+    "LiteRT definition to disable NPU in build config"
+    TRUE
+)
+
 set_property(GLOBAL PROPERTY LITERTLM_LOCAL_ARCHIVE_REGISTRY "")
 set_property(GLOBAL PROPERTY LITERTLM_LOCAL_TARGET_REGISTRY "")
 
