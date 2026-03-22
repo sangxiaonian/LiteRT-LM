@@ -20,6 +20,8 @@ load(
 
 load("@rules_python//python:defs.bzl", "py_test")
 
+package(default_visibility = ["//visibility:public"])
+
 pytype_strict_library(
     name = "interfaces",
     srcs = ["interfaces.py"],
@@ -117,6 +119,11 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("//:version.bzl", "VERSION")
 
+config_setting(
+    name = "is_nightly",
+    define_values = {"PYPI_NIGHTLY": "1"},
+)
+
 genrule(
     name = "copy_gemma_model_constraint_provider_so",
     srcs = select({
@@ -147,7 +154,7 @@ py_package(
 
 # To build:
 # $ PYTHON_VERSION=3.10
-# $ bazel build --repo_env=HERMETIC_PYTHON_VERSION=${PYTHON_VERSION} --@rules_python//python/config_settings:python_version=${PYTHON_VERSION} -c opt python:litert_lm_wheel
+# $ bazel build --repo_env=HERMETIC_PYTHON_VERSION=${PYTHON_VERSION} --@rules_python//python/config_settings:python_version=${PYTHON_VERSION} -c opt //python/litert_lm:litert_lm_wheel
 py_wheel(
     name = "litert_lm_wheel",
     abi = select({
@@ -157,7 +164,10 @@ py_wheel(
         "@rules_python//python/config_settings:is_python_3.13": "cp313",
         "//conditions:default": "none",
     }),
-    distribution = "litert_lm",
+    distribution = select({
+        ":is_nightly": "litert-lm-nightly",
+        "//conditions:default": "litert-lm",
+    }),
     platform = select({
         "//build_config:linux_x86_64": "manylinux_2_27_x86_64",
         "//build_config:linux_arm64": "manylinux_2_27_aarch64",
@@ -173,6 +183,9 @@ py_wheel(
         "//conditions:default": "py3",
     }),
     strip_path_prefixes = ["python"],
-    version = VERSION,
+    version = select({
+        ":is_nightly": VERSION + ".dev$(PYPI_NIGHTLY_DATE)",
+        "//conditions:default": VERSION,
+    }),
     deps = [":litert_lm_pkg"],
 )
