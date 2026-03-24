@@ -606,6 +606,31 @@ cc_test(
 )
 
 cc_library(
+    name = "llm_executor_settings_utils",
+    srcs = ["llm_executor_settings_utils.cc"],
+    hdrs = ["llm_executor_settings_utils.h"],
+    deps = [
+        ":executor_settings_base",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "llm_executor_settings_utils_test",
+    srcs = ["llm_executor_settings_utils_test.cc"],
+    deps = [
+        ":executor_settings_base",
+        ":llm_executor_settings",
+        ":llm_executor_settings_utils",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/status",
+        "//runtime/util:test_utils",
+    ],
+)
+
+cc_library(
     name = "llm_executor_io_types",
     srcs = ["llm_executor_io_types.cc"],
     hdrs = ["llm_executor_io_types.h"],
