@@ -414,6 +414,7 @@ target_link_libraries(runtime_executor_llm_litert_compiled_model_executor
     LiteRTLM::Runtime::Executor::LLM::Interface
     LiteRTLM::Runtime::Executor::LLMExecutorProcessedTokens
     LiteRTLM::Runtime::Executor::LLMLiteRTCompiledModelCacheUtils
+    LiteRTLM::Runtime::Executor::LLMLiteRTMtpDrafter
     LiteRTLM::Runtime::Executor::MagicNumberConfigsHelper
     LiteRTLM::Runtime::Components::ModelResources::Interface
     LiteRTLM::Runtime::Components::ModelResources::LiteRTLM
@@ -605,7 +606,36 @@ add_litertlm_library(runtime_executor_default_static_gpu_accelerator INTERFACE)
 # Note: Empty target for CPU builds, but required for linking consistency.
 
 # ==============================================================================
-# 24. Folder Facade
+# 24. LLM LiteRT MTP Drafter
+# ==============================================================================
+add_litertlm_library(runtime_executor_llm_litert_mtp_drafter STATIC
+  llm_litert_mtp_drafter.cc
+)
+add_library(LiteRTLM::Runtime::Executor::LLMLiteRTMtpDrafter ALIAS runtime_executor_llm_litert_mtp_drafter)
+
+target_include_directories(runtime_executor_llm_litert_mtp_drafter
+  PRIVATE
+    ${GENERATED_SRC_DIR}
+    ${LITERT_INCLUDE_DIR}
+    ${LITERTLM_INCLUDE_PATHS}
+)
+
+target_link_libraries(runtime_executor_llm_litert_mtp_drafter
+  PUBLIC
+    LiteRTLM::Runtime::Executor::ExecutorSettingsBase
+    LiteRTLM::Runtime::Executor::LiteRTCompiledModelExecutorUtils
+    LiteRTLM::Runtime::Executor::LLMExecutorSettings
+    LiteRTLM::Runtime::Components::ModelResources::Interface
+    LiteRTLM::Runtime::Components::Sampler::Interface
+    LiteRTLM::Runtime::Components::Sampler::Factory
+    LiteRTLM::Runtime::Components::EmbeddingLookup::Manager
+    runtime_util_convert_tensor_buffer
+    runtime_util_litert_status_util
+    LITERTLM_DEPS
+)
+
+# ==============================================================================
+# 25. Folder Facade
 # ==============================================================================
 add_library(runtime_executor_libs INTERFACE)
 add_library(LiteRTLM::Runtime::Executor ALIAS runtime_executor_libs)
@@ -624,6 +654,7 @@ target_link_libraries(runtime_executor_libs INTERFACE
   LiteRTLM::Runtime::Executor::LLMLiteRTCompiledModelExecutorFactory
   LiteRTLM::Runtime::Executor::LLMLiteRTCompiledModelCacheUtils
   LiteRTLM::Runtime::Executor::LLM::CompiledModelExecutor
+  LiteRTLM::Runtime::Executor::LLMLiteRTMtpDrafter
   LiteRTLM::Runtime::Executor::LLM::NpuCompiledModel
   LiteRTLM::Runtime::Executor::MagicNumberConfigsHelper
   LiteRTLM::Runtime::Executor::Vision::Settings

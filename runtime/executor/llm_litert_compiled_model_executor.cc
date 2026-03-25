@@ -18,7 +18,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>  // NOLINT(build/c++17) for std::filesystem::path
 #include <memory>
 #include <optional>
 #include <random>
@@ -50,7 +49,6 @@
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer_types.h"  // from @litert
 #include "litert/cc/options/litert_cpu_options.h"  // from @litert
-#include "litert/cc/options/litert_gpu_options.h"  // from @litert
 #include "litert/cc/options/litert_runtime_options.h"  // from @litert
 #include "runtime/components/embedding_lookup/embedding_lookup_manager.h"
 #include "runtime/components/model_resources.h"
@@ -61,9 +59,10 @@
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/llm_executor_processed_tokens.h"
 #include "runtime/executor/llm_executor_settings.h"
+#include "runtime/executor/llm_executor_settings_utils.h"
 #include "runtime/executor/llm_litert_compiled_model_cache_utils.h"
+#include "runtime/executor/llm_litert_mtp_drafter.h"
 #include "runtime/util/convert_tensor_buffer.h"
-#include "runtime/util/file_util.h"
 #include "runtime/util/lora_util.h"
 #include "runtime/util/scoped_file.h"
 #include "runtime/util/status_macros.h"  // IWYU pragma: keep
@@ -80,10 +79,6 @@ using ::absl::Span;
 constexpr absl::string_view kPrefillSignatureRunner = "prefill";
 constexpr absl::string_view kDecodeSignatureRunner = "decode";
 constexpr int kDynamicDimValue = -1;
-
-// Default number of threads for WebGPU weight upload and kernel compilation.
-constexpr int kDefaultNumThreadsToUpload = 2;
-constexpr int kDefaultNumThreadsToCompile = 1;
 
 absl::Status InitializeEmbeddingLookups(
     ModelResources& resources,
@@ -175,25 +170,6 @@ absl::Status CopyKvCacheBuffers(
     }
   }
   return absl::OkStatus();
-}
-
-// Returns the backend to be used for sampling.
-absl::StatusOr<Backend> GetSamplerBackend(
-    const LlmExecutorSettings& executor_settings) {
-  Backend backend = executor_settings.GetBackend();
-  Backend sampler_backend = executor_settings.GetSamplerBackend();
-
-  if (sampler_backend == Backend::UNSPECIFIED) {
-    sampler_backend = backend;
-  }
-
-  if (sampler_backend != Backend::CPU && sampler_backend != Backend::GPU) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Unsupported sampler backend: ", sampler_backend,
-                     " for backend: ", backend));
-  }
-
-  return sampler_backend;
 }
 
 void LogValues(absl::Span<const float> values, size_t num_values_to_log,
@@ -1088,22 +1064,82 @@ absl::StatusOr<std::vector<std::vector<int>>>
 LlmLiteRtCompiledModelExecutorBase::Decode(
     const ExecutorDecodeParams& decode_params) {
 
-  ASSIGN_OR_RETURN(auto decoded_logits,
-                   DecodeLogits(ExecutorInputs(), decode_params));
-  std::optional<TensorBuffer> output_tokens;
-  {
-    LITERT_ASSIGN_OR_RETURN(auto decoded_logits_type,
-                            decoded_logits.TensorType());
-    auto dimensions = decoded_logits_type.Layout().Dimensions();
-    // Shape of decoded_logits is [batch_size, Token_length, vocab_size].
-    RET_CHECK_EQ(dimensions.size(), 3);
-    LITERT_ASSIGN_OR_RETURN(
-        output_tokens, CreateTensorBuffer<int>({dimensions[0], dimensions[1]}));
-  }
+  std::vector<std::vector<int>> output_tokens_vector;
+  if (mtp_drafter_ == nullptr) {
+    ASSIGN_OR_RETURN(auto decoded_logits,
+                     DecodeLogits(ExecutorInputs(), decode_params));
+    std::optional<TensorBuffer> output_tokens;
+    {
+      LITERT_ASSIGN_OR_RETURN(auto decoded_logits_type,
+                              decoded_logits.TensorType());
+      auto dimensions = decoded_logits_type.Layout().Dimensions();
+      // Shape of decoded_logits is [batch_size, Token_length, vocab_size].
+      RET_CHECK_EQ(dimensions.size(), 3);
+      LITERT_ASSIGN_OR_RETURN(
+          output_tokens,
+          CreateTensorBuffer<int>({dimensions[0], dimensions[1]}));
+    }
+    RETURN_IF_ERROR(SampleLogits(decoded_logits, *output_tokens));
+    LITERT_ASSIGN_OR_RETURN(output_tokens_vector,
+                            CopyFromTensorBuffer2D<int>(*output_tokens));
+  } else {
+    // MTP keeps an internal state of the last time it was called and will
+    // use those projected activations to kick off the next draft steps. As
+    // such, we need to do a single decode step on the first decode call after
+    // prefill and provide the projected activations to the MTP drafted only
+    // once.
+    bool last_run_is_decode = llm_context_->runtime_state().ran_decode;
+    if (last_run_is_decode) {
+      ASSIGN_OR_RETURN(auto step_and_token, GetTokenToDecode(ExecutorInputs()));
+      RETURN_IF_ERROR(ConsumePendingOrAddProcessedToken(step_and_token.token));
+      // Output: [Batch, drafted and verified tokens]
+      LITERT_ASSIGN_OR_RETURN(output_tokens_vector,
+                              mtp_drafter_->Draft(step_and_token.step,
+                                                  step_and_token.token[0]->id(),
+                                                  /*activations=*/std::nullopt,
+                                                  *input_kv_cache_buffers_,
+                                                  *output_kv_cache_buffers_));
+      RET_CHECK_EQ(output_tokens_vector.size(), 1);
+      llm_context_->runtime_state().current_step +=
+          output_tokens_vector[0].size();
+    } else {
+      int token_id = -1;
+      {
+        ASSIGN_OR_RETURN(auto decoded_logits,
+                         DecodeLogits(ExecutorInputs(), decode_params));
+        LITERT_ASSIGN_OR_RETURN(auto decoded_logits_type,
+                                decoded_logits.TensorType());
+        auto dimensions = decoded_logits_type.Layout().Dimensions();
+        // Shape of decoded_logits is [batch_size, Token_length, vocab_size].
+        RET_CHECK_EQ(dimensions.size(), 3);
+        LITERT_ASSIGN_OR_RETURN(
+            auto output_tokens,
+            CreateTensorBuffer<int>({dimensions[0], dimensions[1]}));
+        RETURN_IF_ERROR(SampleLogits(decoded_logits, output_tokens));
+        LITERT_ASSIGN_OR_RETURN(output_tokens_vector,
+                                CopyFromTensorBuffer2D<int>(output_tokens));
+        RET_CHECK_EQ(output_tokens_vector.size(), 1);
+        RET_CHECK_EQ(output_tokens_vector[0].size(), 1);
+        token_id = output_tokens_vector[0][0];
+      }
 
-  RETURN_IF_ERROR(SampleLogits(decoded_logits, *output_tokens));
-  LITERT_ASSIGN_OR_RETURN(std::vector<std::vector<int>> output_tokens_vector,
-                          CopyFromTensorBuffer2D<int>(*output_tokens));
+      RET_CHECK(decode_output_buffers_.contains("activations"));
+      LITERT_ASSIGN_OR_RETURN(
+          auto activations, decode_output_buffers_["activations"].Duplicate());
+      // Note: Position remains the same as the prefill step. However,
+      // current_step is incremented in DecodeLogits and as such needs to be
+      // decremented.
+      LITERT_ASSIGN_OR_RETURN(
+          output_tokens_vector,
+          mtp_drafter_->Draft(llm_context_->runtime_state().current_step - 1,
+                              token_id, std::move(activations),
+                              *input_kv_cache_buffers_,
+                              *output_kv_cache_buffers_));
+      llm_context_->runtime_state().current_step +=
+          output_tokens_vector[0].size();
+      output_tokens_vector[0].insert(output_tokens_vector[0].begin(), token_id);
+    }
+  }
 
   // Check for any invalid token ids and set them to zero, if any.
   bool has_invalid_output_token = false;
@@ -1123,15 +1159,26 @@ LlmLiteRtCompiledModelExecutorBase::Decode(
 
   // Update context with the assumption that there is one output per head.
   // We must change this when doing drafter based decoding.
-  std::vector<std::shared_ptr<TokenData>> tokens;
-  tokens.reserve(output_tokens_vector.size());
+  std::vector<int> processed_tokens;
+  std::vector<std::shared_ptr<TokenData>> pending_tokens;
   for (auto& output_head_tokens : output_tokens_vector) {
-    RET_CHECK_EQ(output_head_tokens.size(), 1);
-    tokens.push_back(std::make_shared<TokenData>(output_head_tokens[0]));
+    for (int i = 0; i < output_head_tokens.size(); ++i) {
+      // Last token is reserved as pending input token.
+      if (i == output_head_tokens.size() - 1) {
+        pending_tokens.push_back(
+            std::make_shared<TokenData>(output_head_tokens[i]));
+      } else {
+        processed_tokens.push_back(output_head_tokens[i]);
+      }
+    }
+  }
+  if (!processed_tokens.empty()) {
+    llm_context_->processed_context().processed_tokens().AddProcessedTokens(
+        processed_tokens);
   }
   RETURN_IF_ERROR(
       llm_context_->processed_context().processed_tokens().AddPendingInputToken(
-          tokens));
+          pending_tokens));
 
   return output_tokens_vector;
 }
@@ -1290,27 +1337,6 @@ absl::Status LlmLiteRtCompiledModelExecutorBase::InitializeSampler(
   }
 
   return absl::OkStatus();
-}
-
-absl::StatusOr<std::unique_ptr<CompiledModel>>
-LlmLiteRtCompiledModelExecutorBase::CreateMtpDrafterCompiledModel(
-    ModelResources& resources, Environment& lrt_env,
-    Options& compilation_options) {
-  auto mtp_drafter_model_status_or =
-      resources.GetTFLiteModel(ModelType::kTfLiteMtpDrafter);
-  std::unique_ptr<CompiledModel> mtp_drafter_compiled_model = nullptr;
-  if (mtp_drafter_model_status_or.ok()) {
-    const Model* mtp_drafter_model = *mtp_drafter_model_status_or;
-    if (mtp_drafter_model != nullptr) {
-      LITERT_ASSIGN_OR_RETURN(
-          auto drafter_compiled_model,
-          CompiledModel::Create(lrt_env, mtp_drafter_model->Get(),
-                                compilation_options));
-      mtp_drafter_compiled_model =
-          std::make_unique<CompiledModel>(std::move(drafter_compiled_model));
-    }
-  }
-  return mtp_drafter_compiled_model;
 }
 
 absl::Status LlmLiteRtCompiledModelExecutorBase::SwapSamplerInputTensors() {
@@ -1473,16 +1499,13 @@ absl::Status LlmLiteRtCompiledModelExecutorStatic::Prefill(
     }
     // TODO(b/494284915): Switch to use async prefill for Metal backend.
     if (!do_prefill_sync_.has_value()) {
-      do_prefill_sync_ =
-          std::any_of(prefill_input_buffers_[prefill_signature].begin(),
-                      prefill_input_buffers_[prefill_signature].end(),
-                      [](const auto& pair) {
-                        return pair.second.IsMetalMemory();
-                      });
+      do_prefill_sync_ = std::any_of(
+          prefill_input_buffers_[prefill_signature].begin(),
+          prefill_input_buffers_[prefill_signature].end(),
+          [](const auto& pair) { return pair.second.IsMetalMemory(); });
     }
-    bool async =
-        !*do_prefill_sync_ &&
-        (i < work_groups.size() - 1 || !params.GetWaitForCompletion());
+    bool async = !*do_prefill_sync_ &&
+                 (i < work_groups.size() - 1 || !params.GetWaitForCompletion());
     RETURN_IF_ERROR(PrefillInternal(
         prefill_signature, prefill_input_buffers_[prefill_signature],
         ids.subspan(/*pos=*/0, prefill_length), async));
@@ -1506,10 +1529,6 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     ModelResources& resources) {
   ASSIGN_OR_RETURN(auto litert_model,
                    resources.GetTFLiteModel(ModelType::kTfLitePrefillDecode));
-  // For the LlmLiteRtCompiledModelExecutorStatic, ML_DRIFT backend is used by
-  // default.
-  // TODO(b/405424188): - Add support for NPU backends.
-  LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
   std::string cache_path = executor_settings.GetCacheDir();
   auto activation_data_type = ActivationDataType::FLOAT16;
   // TODO(b/433590109): Some GPUs do not support FP16, so we need to check the
@@ -1518,8 +1537,9 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
     activation_data_type = executor_settings.GetActivationDataType().value();
   }
   const Backend backend = executor_settings.GetBackend();
-  bool use_fp16_precision = true;
-  bool gpu_optimized_single_buffer_cache = false;
+  bool use_fp16_precision =
+      activation_data_type == ActivationDataType::FLOAT16 &&
+      backend == Backend::GPU;
 
   if (!litert_model || !*litert_model) {
     return absl::InternalError("Failed to build LiteRt model");
@@ -1548,209 +1568,13 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       GetModelSignaturesFromInputOutputNames(decode_signature.InputNames(),
                                              decode_signature.OutputNames()));
 
-  switch (backend) {
-    case Backend::GPU: {
-      // TODO: b/403132820 - Add accelerator compilation options for ML_DRIFT.
-      LITERT_ASSIGN_OR_RETURN(auto& gpu_compilation_options,
-                              compilation_options.GetGpuOptions());
-      gpu_compilation_options.EnableInfiniteFloatCapping(true);
-      if (activation_data_type == ActivationDataType::FLOAT32) {
-        use_fp16_precision = false;
-        gpu_compilation_options.SetPrecision(GpuOptions::Precision::kFp32);
-      } else {
-        gpu_compilation_options.SetPrecision(GpuOptions::Precision::kFp16);
-      }
-#if defined(__APPLE__)
-      gpu_compilation_options.SetPreferTextureWeights(false);
-      gpu_compilation_options.SetUseMetalArgumentBuffers(true);
-#else   // !__APPLE__
-      gpu_compilation_options.SetPreferTextureWeights(true);
-#endif  // !__APPLE__
+  bool gpu_optimized_single_buffer_cache =
+      backend == Backend::GPU && signatures.input_int32_param.has_value();
 
-      bool has_valid_model_fd =
-          executor_settings.GetModelAssets().GetScopedFile().ok() &&
-          executor_settings.GetModelAssets().GetScopedFile().value()->IsValid();
-
-      auto program_cache_file =
-          executor_settings.GetProgramCacheFile(".mldrift_program_cache.bin");
-      bool has_valid_program_cache_fd =
-          program_cache_file.ok() &&
-          !std::holds_alternative<std::string>(*program_cache_file);
-
-      auto model_path_or_status = executor_settings.GetModelAssets().GetPath();
-      if (model_path_or_status.ok()) {
-        // If the model path is available, use the model name as the cache key.
-        absl::string_view model_path = *model_path_or_status;
-        absl::string_view model_name = Basename(model_path);
-        gpu_compilation_options.SetModelCacheKey(model_name.data());
-      } else if (has_valid_model_fd && has_valid_program_cache_fd) {
-        // If the model is loaded from an fd, there is no way to automatically
-        // generate a cache key. But if we are loading a model from an fd, it is
-        // likely that our program cache is also loaded from an fd which does
-        // not require a cache key to prevent collisions. The GPU delegate will
-        // still expect a cache key, so we set it to a constant value.
-        gpu_compilation_options.SetModelCacheKey("fd_token");
-      }
-
-      AdvancedSettings advanced_settings;
-      if (executor_settings.GetAdvancedSettings()) {
-        advanced_settings = *executor_settings.GetAdvancedSettings();
-      }
-
-      bool serialization_dir_set = false;
-      if (cache_path != ":nocache") {
-        if (cache_path.empty()) {
-          ASSIGN_OR_RETURN(auto model_path,
-                           executor_settings.GetModelAssets().GetPath());
-          cache_path = std::filesystem::path(std::string(model_path))
-                           .parent_path()
-                           .string();
-          if (cache_path.empty()) {
-            cache_path = std::filesystem::current_path().string();
-          }
-        }
-        ABSL_LOG(INFO) << "Setting serialization dir: " << cache_path;
-        gpu_compilation_options.SetSerializationDir(cache_path.c_str());
-        serialization_dir_set = true;
-        gpu_compilation_options.SetSerializeExternalTensors(true);
-        gpu_compilation_options.CacheCompiledProgramsOnly(
-            advanced_settings.cache_compiled_shaders_only);
-      } else {
-        gpu_compilation_options.SetSerializeExternalTensors(false);
-      }
-
-      if (program_cache_file.ok()) {
-        if (std::holds_alternative<std::string>(*program_cache_file)) {
-          if (!serialization_dir_set) {
-            cache_path = std::filesystem::path(
-                             std::get<std::string>(*program_cache_file))
-                             .parent_path()
-                             .string();
-            ABSL_LOG(INFO) << "Setting program cache dir: " << cache_path;
-            gpu_compilation_options.SetSerializationDir(cache_path.c_str());
-          }
-        } else {
-          auto scoped_cache_file =
-              std::get<std::shared_ptr<lm::ScopedFile>>(*program_cache_file);
-          ASSIGN_OR_RETURN(auto duplicated, scoped_cache_file->Duplicate());
-          ASSIGN_OR_RETURN(int fd, duplicated.Release());
-          gpu_compilation_options.SetProgramCacheFd(fd);
-        }
-        gpu_compilation_options.SetSerializeProgramCache(true);
-      } else {
-        gpu_compilation_options.SetSerializeProgramCache(false);
-      }
-
-      // Use NoExternalTensorsMode to get better performance.
-      bool external_tensor_mode =
-          executor_settings.GetBackendConfig<GpuConfig>()->external_tensor_mode;
-      gpu_compilation_options.EnableExternalTensorsMode(external_tensor_mode);
-      if (!external_tensor_mode) {
-        // This option prevents KVCache handling from being affected by
-        // BHWC conversion in NoExternalTensorsMode.
-        gpu_compilation_options.AddExternalTensorPattern("kv_cache_");
-        if (signatures.input_int32_param.has_value()) {
-          gpu_optimized_single_buffer_cache = true;
-          gpu_compilation_options.AddBufferStorageTensorPattern("kv_cache_");
-          gpu_compilation_options.AddExternalTensorPattern("param_tensor");
-          gpu_compilation_options.AddBufferStorageTensorPattern("param_tensor");
-        }
-        ASSIGN_OR_RETURN(auto sampler_backend,
-                         GetSamplerBackend(executor_settings));
-        if (sampler_backend == Backend::GPU) {
-          // GPU Sampler requires logits to be external tensors (PHWC4 format).
-          gpu_compilation_options.AddExternalTensorPattern("logits");
-        }
-      }
-      // Prefill and decode are always fully delegated to single delegate.
-      gpu_compilation_options.SetHintFullyDelegatedToSingleDelegate(true);
-
-      gpu_compilation_options.SetMadviseOriginalSharedTensors(
-          advanced_settings.gpu_madvise_original_shared_tensors);
-      gpu_compilation_options.SetConvertWeightsOnGpu(
-          advanced_settings.convert_weights_on_gpu);
-      gpu_compilation_options.EnableConstantTensorSharing(
-          advanced_settings.share_constant_tensors);
-      gpu_compilation_options.EnableAllowSrcQuantizedFcConvOps(
-          !advanced_settings.allow_src_quantized_fc_conv_ops.has_value() ||
-          advanced_settings.allow_src_quantized_fc_conv_ops.value());
-      gpu_compilation_options.HintWaitingForCompletion(
-          advanced_settings.hint_waiting_for_completion.has_value() &&
-          advanced_settings.hint_waiting_for_completion.value());
-      if (advanced_settings.is_benchmark) {
-        gpu_compilation_options.SetSyncExecutionModeWaitType(
-            GpuOptions::SyncExecutionModeWaitType::kActive);
-        gpu_compilation_options.WaitForWeightsConversionComplete(
-            advanced_settings
-                .wait_for_weights_conversion_complete_in_benchmark);
-      }
-      if (advanced_settings.gpu_context_low_priority.has_value() &&
-          advanced_settings.gpu_context_low_priority.value()) {
-        gpu_compilation_options.SetPriority(GpuOptions::Priority::kLow);
-      }
-      if (!advanced_settings.preferred_device_substr.empty()) {
-        gpu_compilation_options.SetPreferredDeviceSubstr(
-            advanced_settings.preferred_device_substr.c_str());
-      }
-      gpu_compilation_options.DisableShaderOptimization(
-          !advanced_settings.optimize_shader_compilation);
-      // TODO b/441627719 - Select backend by runtime options.
-#if defined(LITERT_USE_WEBGPU_ACCELERATOR)
-      gpu_compilation_options.SetBackend(GpuOptions::Backend::kWebGpu);
-#endif  // defined(LITERT_USE_WEBGPU_ACCELERATOR)
-      // Prepare WebGPU or Vulkan command buffers ahead to reduce the overhead
-      // of command buffer preparation. 2 steps ahead because KV cache is
-      // swapped and the GPU resource bindings are the same as the previous
-      // previous step.
-      gpu_compilation_options.SetNumStepsOfCommandBufferPreparations(2);
-      gpu_compilation_options.SetNumThreadsToUpload(
-          advanced_settings.num_threads_to_upload >= 0
-              ? advanced_settings.num_threads_to_upload
-              : kDefaultNumThreadsToUpload);
-      gpu_compilation_options.SetNumThreadsToCompile(
-          advanced_settings.num_threads_to_compile >= 0
-              ? advanced_settings.num_threads_to_compile
-              : kDefaultNumThreadsToCompile);
-      compilation_options.SetHardwareAccelerators(HwAccelerators::kGpu);
-      break;
-    }
-    case Backend::CPU: {
-      use_fp16_precision = false;
-      LITERT_ASSIGN_OR_RETURN(auto& cpu_compilation_options,
-                              compilation_options.GetCpuOptions());
-      const uint32_t num_threads =
-          executor_settings.GetBackendConfig<CpuConfig>()->number_of_threads;
-      cpu_compilation_options.SetNumThreads(num_threads);
-      auto weight_cache_file =
-          executor_settings.GetWeightCacheFile(".xnnpack_cache");
-      if (weight_cache_file.ok()) {
-        if (std::holds_alternative<std::string>(*weight_cache_file)) {
-          cache_path = std::get<std::string>(*weight_cache_file);
-          cpu_compilation_options.SetXNNPackWeightCachePath(cache_path.c_str());
-        } else {
-          auto scoped_cache_file =
-              std::get<std::shared_ptr<ScopedFile>>(*weight_cache_file);
-          ASSIGN_OR_RETURN(auto duplicated, scoped_cache_file->Duplicate());
-          ASSIGN_OR_RETURN(int fd, duplicated.Release());
-          cpu_compilation_options.SetXNNPackWeightCacheFileDescriptor(fd);
-        }
-      } else {
-        ABSL_LOG(WARNING) << "Can't use cache: " << weight_cache_file.status();
-      }
-      auto default_xnn_options = TfLiteXNNPackDelegateOptionsDefault();
-      cpu_compilation_options.SetXNNPackFlags(
-          default_xnn_options.flags |
-          TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS);
-      LITERT_ASSIGN_OR_RETURN(auto& runtime_options,
-                              compilation_options.GetRuntimeOptions());
-      runtime_options.SetCompressQuantizationZeroPoints(true);
-      compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
-      break;
-    }
-    default:
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Unsupported backend: ", executor_settings.GetBackend()));
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto compilation_options,
+      CreateCompilationOptions(executor_settings, activation_data_type,
+                               &signatures));
 
   auto section_offset =
       resources.GetWeightsSectionOffset(ModelType::kTfLitePrefillDecode);
@@ -1774,11 +1598,6 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
       CompiledModel::Create(lrt_env, litert_model->Get(), compilation_options));
-
-  LITERT_ASSIGN_OR_RETURN(
-      std::unique_ptr<CompiledModel> mtp_drafter_compiled_model,
-      LlmLiteRtCompiledModelExecutorBase::CreateMtpDrafterCompiledModel(
-          resources, lrt_env, compilation_options));
 
   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_input_buffers;
   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_output_buffers;
@@ -1931,6 +1750,26 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
   std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup;
   RETURN_IF_ERROR(InitializeEmbeddingLookups(resources, embedding_lookup,
                                              per_layer_embedding_lookup));
+
+  std::unique_ptr<LlmLiteRtMtpDrafter> mtp_drafter;
+  {
+    const auto& advanced_settings = executor_settings.GetAdvancedSettings();
+    if (advanced_settings.has_value() &&
+        advanced_settings->enable_speculative_decoding) {
+      RET_CHECK_NE(embedding_lookup, nullptr);
+      RET_CHECK_NE(per_layer_embedding_lookup, nullptr);
+      LITERT_ASSIGN_OR_RETURN(
+          auto base_compiled_model,
+          CompiledModel::Create(lrt_env, litert_model->Get(),
+                                compilation_options));
+      ASSIGN_OR_RETURN(mtp_drafter,
+                       LlmLiteRtMtpDrafter::Create(
+                           lrt_env, resources, executor_settings,
+                           std::move(base_compiled_model), *embedding_lookup,
+                           *per_layer_embedding_lookup));
+    }
+  }
+
   return absl::WrapUnique(new LlmLiteRtCompiledModelExecutorStatic(
       std::move(executor_settings), lrt_env, litert_model,
       std::move(compiled_model), std::move(decode_input_buffers),
@@ -1940,8 +1779,7 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
       std::move(decode_output_kv_cache_buffers), std::move(prefill_runner_set),
       signatures, batch_size, std::move(cache_path),
       std::move(embedding_lookup), std::move(per_layer_embedding_lookup),
-      use_fp16_precision, activation_data_type,
-      std::move(mtp_drafter_compiled_model)));
+      use_fp16_precision, activation_data_type, std::move(mtp_drafter)));
 }
 
 /* ===========================================================================*/
@@ -2132,7 +1970,10 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
     ModelResources& resources) {
   ASSIGN_OR_RETURN(auto litert_model,
                    resources.GetTFLiteModel(ModelType::kTfLitePrefillDecode));
-  LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+  ASSIGN_OR_RETURN(
+      auto compilation_options,
+      CreateCompilationOptions(executor_settings, ActivationDataType::FLOAT32,
+                               /*signatures=*/std::nullopt));
   std::string weight_cache_path = executor_settings.GetCacheDir();
   const Backend backend = executor_settings.GetBackend();
   RET_CHECK_EQ(backend, Backend::CPU)
@@ -2177,11 +2018,6 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
       CompiledModel::Create(lrt_env, litert_model->Get(), compilation_options));
-
-  LITERT_ASSIGN_OR_RETURN(
-      std::unique_ptr<CompiledModel> mtp_drafter_compiled_model,
-      LlmLiteRtCompiledModelExecutorBase::CreateMtpDrafterCompiledModel(
-          resources, lrt_env, compilation_options));
 
   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_input_buffers;
   absl::flat_hash_map<absl::string_view, TensorBuffer> decode_output_buffers;
@@ -2263,8 +2099,7 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
       std::move(value_cache_input_names), signatures, batch_size,
       std::move(weight_cache_path), std::move(embedding_lookup),
       std::move(per_layer_embedding_lookup), /*use_fp16_precision=*/false,
-      /*logits_data_type=*/LogitsDataType::FLOAT32,
-      std::move(mtp_drafter_compiled_model)));
+      /*logits_data_type=*/LogitsDataType::FLOAT32));
 }
 
 }  // namespace litert::lm
