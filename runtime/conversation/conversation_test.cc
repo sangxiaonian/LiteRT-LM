@@ -532,6 +532,90 @@ Thinking disabled.<end_of_turn>
               testing::ElementsAre(user_message, assistant_message));
 }
 
+TEST_P(ConversationTest, SendSingleMessageWithExtraContextOverwritingPreface) {
+  // Set up mock Session.
+  auto mock_session = CreateMockSession();
+  MockSession* mock_session_ptr = mock_session.get();
+  auto mock_engine = CreateMockEngine(std::move(mock_session));
+
+  // Create Conversation and overwrite prompt template.
+  absl::string_view prompt_template = R"jinja(
+{%- if key1 -%}
+Key1: {{ key1 + "\n"}}
+{%- endif -%}
+{%- if key2 -%}
+Key2: {{ key2 + "\n"}}
+{%- endif -%}
+{%- if key3 -%}
+Key3: {{ key3 + "\n"}}
+{%- endif -%}
+{%- for message in messages -%}
+  {{- '<start_of_turn>' + message.role + '\n' -}}
+  {%- if message.content is string -%}
+    {{- message.content + '<end_of_turn>\n' -}}
+  {%- else -%}
+    {{- message.content[0].text + '<end_of_turn>\n' -}}
+  {%- endif -%}
+{%- endfor -%}
+)jinja";
+
+  JsonPreface preface;
+
+  // This extra context will be set at the Conversation level.
+  preface.extra_context = {{"key1", "val1"}, {"key2", "val2"}};
+
+  ASSERT_OK_AND_ASSIGN(
+      auto conversation_config,
+      ConversationConfig::Builder()
+          .SetSessionConfig(session_config_)
+          .SetPreface(preface)
+          .SetOverwritePromptTemplate(PromptTemplate(prompt_template))
+          .Build(*mock_engine));
+  ASSERT_OK_AND_ASSIGN(auto conversation,
+                       Conversation::Create(*mock_engine, conversation_config));
+
+  // We will send a single message with extra context that overwrites key1 and
+  // adds key3.
+  JsonMessage user_message = {{"role", "user"}, {"content", "How are you?"}};
+  OptionalArgs optional_args;
+  optional_args.extra_context =
+      nlohmann::ordered_json{{"key1", "val1_new"}, {"key3", "val3"}};
+
+  // key1 should be overwritten to val1_new.
+  // key2 should remain val2.
+  // key3 should be added as val3.
+  absl::string_view expected_input_text =
+      "Key1: val1_new\n"
+      "Key2: val2\n"
+      "Key3: val3\n"
+      "<start_of_turn>user\n"
+      "How are you?<end_of_turn>\n";
+
+  EXPECT_CALL(*mock_session_ptr,
+              RunPrefill(testing::ElementsAre(
+                  testing::VariantWith<InputText>(testing::Property(
+                      &InputText::GetRawTextString, expected_input_text)))))
+      .WillOnce(testing::Return(absl::OkStatus()));
+  EXPECT_CALL(*mock_session_ptr, RunDecode(testing::_))
+      .WillOnce(
+          testing::Return(Responses(TaskState::kProcessing, {"I am good."})));
+
+  ASSERT_OK_AND_ASSIGN(
+      const Message response,
+      conversation->SendMessage(user_message, std::move(optional_args)));
+
+  JsonMessage assistant_message = nlohmann::ordered_json::parse(R"({
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I am good."
+      }
+    ]
+  })");
+  EXPECT_EQ(std::get<JsonMessage>(response), assistant_message);
+}
+
 TEST_P(ConversationTest, SendMultipleMessages) {
   // Set up mock Session.
   auto mock_session = CreateMockSession();

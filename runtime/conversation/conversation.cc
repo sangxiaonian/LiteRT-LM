@@ -223,7 +223,9 @@ absl::StatusOr<std::string> Conversation::GetSingleTurnTextFromFullHistory(
   // Merge extra context for the message into the extra context provided in the
   // preface. Existing keys will be overwritten.
   if (optional_args.extra_context.has_value()) {
-    old_tmpl_input.extra_context = optional_args.extra_context.value();
+    for (const auto& [key, value] : optional_args.extra_context->items()) {
+      old_tmpl_input.extra_context[key] = value;
+    }
   }
 
   absl::MutexLock lock(history_mutex_);  // NOLINT
