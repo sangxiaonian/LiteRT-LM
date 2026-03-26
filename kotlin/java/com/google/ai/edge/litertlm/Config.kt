@@ -107,7 +107,9 @@ data class EngineConfig(
  *     - If `null`, uses the default channel configuration from the `LlmMetadata`.
  *     - If empty, channels will be disabled.
  */
-data class ConversationConfig(
+data class ConversationConfig
+@JvmOverloads
+constructor(
   val systemInstruction: Contents? = null,
   val initialMessages: List<Message> = listOf(),
   val tools: List<ToolProvider> = listOf(),
