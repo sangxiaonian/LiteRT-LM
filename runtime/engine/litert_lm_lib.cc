@@ -61,7 +61,7 @@
 #include "runtime/executor/llm_executor_settings.h"
 #include "runtime/proto/sampler_params.pb.h"
 #include "runtime/util/scoped_file.h"
-#include "runtime/util/status_macros.h"  // IWYU pragma: keep
+#include "runtime/util/status_macros.h"  // NOLINT
 #include "re2/re2.h"  // from @com_googlesource_code_re2
 #include "tflite/profiling/memory_info.h"  // from @litert
 #include "tflite/profiling/memory_usage_monitor.h"  // from @litert

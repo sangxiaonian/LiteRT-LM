@@ -30,13 +30,10 @@
 #include <string>
 #include <vector>
 
-#include "absl/base/log_severity.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
-#include "absl/flags/marshalling.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
-#include "absl/log/globals.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl

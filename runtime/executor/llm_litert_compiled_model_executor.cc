@@ -69,6 +69,7 @@
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @litert
 #include "tflite/types/half.h"  // from @litert
 
+
 namespace litert::lm {
 namespace {
 
@@ -81,6 +82,7 @@ constexpr absl::string_view kDecodeSignatureRunner = "decode";
 constexpr int kDynamicDimValue = -1;
 
 absl::Status InitializeEmbeddingLookups(
+    litert::Environment& env,
     ModelResources& resources,
     std::unique_ptr<EmbeddingLookupManager>& embedding_lookup,
     std::unique_ptr<EmbeddingLookupManager>& per_layer_embedding_lookup) {
@@ -108,7 +110,9 @@ absl::Status InitializeEmbeddingLookups(
     ASSIGN_OR_RETURN(
         embedding_lookup,
         EmbeddingLookupManager::Create(*text_embedder_model,
-                                       end_of_multi_modal_embedding_models));
+                                       end_of_multi_modal_embedding_models,
+                                       /*fully_supports_multi_modal=*/true,
+                                       /*signature_key=*/std::nullopt, &env));
   }
 
   // Create per layer embedding lookups from the resources.
@@ -118,7 +122,8 @@ absl::Status InitializeEmbeddingLookups(
     ASSIGN_OR_RETURN(
         per_layer_embedding_lookup,
         EmbeddingLookupManager::Create(*per_layer_embedder_model,
-                                       /*fully_supports_multi_modal=*/false));
+                                       /*fully_supports_multi_modal=*/false,
+                                       /*signature_key=*/std::nullopt, &env));
   }
   return absl::OkStatus();
 }
@@ -313,30 +318,6 @@ absl::StatusOr<RankedTensorType> GetEmbeddingLookupOutputTensorType(
   embedding_dims[1] = num_tokens;
   return RankedTensorType(output_element_type.ElementType(),
                           Layout(std::move(embedding_dims)));
-}
-
-struct MaybeWrappedTensorBuffer {
-  TensorBuffer buffer;
-  bool wrapped;
-};
-
-template <typename T>
-absl::StatusOr<MaybeWrappedTensorBuffer> WrapOrCreateTensorBufferFromHostMemory(
-    RankedTensorType tensor_type, absl::Span<T> data) {
-  size_t size = data.size() * sizeof(T);
-  // First try to wrap the memory with a TensorBuffer.
-  auto wrapped_buffer =
-      TensorBuffer::CreateFromHostMemory(tensor_type, data.data(), size);
-  if (wrapped_buffer.HasValue()) {
-    return MaybeWrappedTensorBuffer{.buffer = std::move(*wrapped_buffer),
-                                    .wrapped = true};
-  }
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto new_buffer,
-      TensorBuffer::CreateManagedHostMemory(tensor_type, size));
-  return MaybeWrappedTensorBuffer{.buffer = std::move(new_buffer),
-                                  .wrapped = false};
 }
 
 // Returns a subspan of the given span for a chunk at the given index.
@@ -772,7 +753,8 @@ LlmLiteRtCompiledModelExecutorBase::GetTokenToDecode(
   RETURN_IF_ERROR(RollBackProcessedTokens());
 
   if (inputs.GetTextDataPtr().ok()) {
-    auto input_tensor_size = (*inputs.GetTextTokenIdsPtr())->PackedSize();
+    LITERT_ASSIGN_OR_RETURN(auto token_ids_buffer, inputs.GetTextTokenIdsPtr());
+    auto input_tensor_size = token_ids_buffer->PackedSize();
     if (input_tensor_size && *input_tensor_size != 0) {
       int output_heads = 1;
       if (llm_context_->runtime_config().output_heads.has_value()) {
@@ -781,8 +763,8 @@ LlmLiteRtCompiledModelExecutorBase::GetTokenToDecode(
       // Input token ids provided, so use it regardless of whether next input
       // token id is set.
       RET_CHECK_EQ(*input_tensor_size, output_heads * sizeof(int32_t));
-      LITERT_ASSIGN_OR_RETURN(auto ids, ReferTensorBufferAsSpan<int32_t>(
-                                            *(*inputs.GetTextTokenIdsPtr())));
+      LITERT_ASSIGN_OR_RETURN(
+          auto ids, ReferTensorBufferAsSpan<int32_t>(*token_ids_buffer));
       if (ids[0] >= 0) {
         // If the input token id is >= 0, it means the input token is provided
         // by the user. In this case, we should invalidate the pending input
@@ -1429,8 +1411,8 @@ absl::Status LlmLiteRtCompiledModelExecutorStatic::Prefill(
   constexpr int kTokenIndexToReduce = 0;
   LITERT_RETURN_IF_ERROR(PrepareFirstPrefillAfterDecode(kTokenIndexToReduce));
 
-  LITERT_ASSIGN_OR_RETURN(auto tensor_type,
-                          (*inputs.GetTextTokenIdsPtr())->TensorType());
+  LITERT_ASSIGN_OR_RETURN(auto token_ids_buffer, inputs.GetTextTokenIdsPtr());
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type, token_ids_buffer->TensorType());
   // Accept batch size 1 or output_heads though prefill handles only the
   // first batch element.
   int32_t input_batch_size = tensor_type.Layout().Dimensions()[0];
@@ -1444,8 +1426,8 @@ absl::Status LlmLiteRtCompiledModelExecutorStatic::Prefill(
     RETURN_IF_ERROR(embedding_lookup_->UpdateMultiModalEmbeddings(inputs));
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto ids, ReferTensorBufferAsSpan<int32_t>(
-                                        *(*inputs.GetTextTokenIdsPtr())));
+  LITERT_ASSIGN_OR_RETURN(auto ids,
+                          ReferTensorBufferAsSpan<int32_t>(*token_ids_buffer));
   // Reduce the input ids only with one user selected.
   auto input_length = ids.size() / input_batch_size;
   ids = ids.subspan(kTokenIndexToReduce * input_length, input_length);
@@ -1713,8 +1695,8 @@ LlmLiteRtCompiledModelExecutorStatic::Create(
 
   std::unique_ptr<EmbeddingLookupManager> embedding_lookup;
   std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup;
-  RETURN_IF_ERROR(InitializeEmbeddingLookups(resources, embedding_lookup,
-                                             per_layer_embedding_lookup));
+  RETURN_IF_ERROR(InitializeEmbeddingLookups(
+      lrt_env, resources, embedding_lookup, per_layer_embedding_lookup));
 
   std::unique_ptr<LlmLiteRtMtpDrafter> mtp_drafter;
   {
@@ -1757,14 +1739,13 @@ absl::Status LlmLiteRtCompiledModelExecutorDynamic::Prefill(
   // Only accept batch size 1 for now.
   LITERT_RETURN_IF_ERROR(PrepareFirstPrefillAfterDecode(0));
 
-  LITERT_ASSIGN_OR_RETURN(auto tensor_type,
-                          (*inputs.GetTextTokenIdsPtr())->TensorType());
+  LITERT_ASSIGN_OR_RETURN(auto token_ids_buffer, inputs.GetTextTokenIdsPtr());
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type, token_ids_buffer->TensorType());
   RET_CHECK_EQ(tensor_type.Layout().Dimensions()[0], 1);
   RET_CHECK_GT(tensor_type.Layout().Dimensions()[1], 0)
       << "Prefill token ids must be non-empty.";
   LITERT_ASSIGN_OR_RETURN(
-      absl::Span<int> ids,
-      ReferTensorBufferAsSpan<int32_t>(*(*inputs.GetTextTokenIdsPtr())));
+      absl::Span<int> ids, ReferTensorBufferAsSpan<int32_t>(*token_ids_buffer));
 
   if (prefill_chunk_size_ <= 0) {
     return PrefillInternal(ids, params);
@@ -2053,8 +2034,8 @@ LlmLiteRtCompiledModelExecutorDynamic::Create(
   RET_CHECK_EQ(batch_size, 1) << "Only support batch size 1 for now.";
   std::unique_ptr<EmbeddingLookupManager> embedding_lookup;
   std::unique_ptr<EmbeddingLookupManager> per_layer_embedding_lookup;
-  RETURN_IF_ERROR(InitializeEmbeddingLookups(resources, embedding_lookup,
-                                             per_layer_embedding_lookup));
+  RETURN_IF_ERROR(InitializeEmbeddingLookups(
+      lrt_env, resources, embedding_lookup, per_layer_embedding_lookup));
 
   return absl::WrapUnique(new LlmLiteRtCompiledModelExecutorDynamic(
       std::move(executor_settings), lrt_env, litert_model,
