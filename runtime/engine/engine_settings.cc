@@ -425,6 +425,8 @@ std::ostream& operator<<(std::ostream& os, const EngineSettings& settings) {
   } else {
     os << "  AudioExecutorSettings: Not set" << std::endl;
   }
+  os << "  ParallelFileSectionLoading: "
+     << settings.GetParallelFileSectionLoading() << std::endl;
   return os;
 }
 
@@ -433,6 +435,15 @@ proto::LlmMetadata& EngineSettings::GetMutableLlmMetadata() {
     metadata_ = proto::LlmMetadata();
   }
   return metadata_.value();
+}
+
+bool EngineSettings::GetParallelFileSectionLoading() const {
+  return parallel_file_section_loading_;
+}
+
+void EngineSettings::SetParallelFileSectionLoading(
+    bool parallel_file_section_loading) {
+  parallel_file_section_loading_ = parallel_file_section_loading;
 }
 
 SessionConfig SessionConfig::CreateDefault() {
