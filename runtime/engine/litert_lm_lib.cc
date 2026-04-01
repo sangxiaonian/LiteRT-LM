@@ -33,6 +33,10 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#ifdef __ANDROID__
+#include <sched.h>
+#include <unistd.h>
+#endif  // __ANDROID__
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
@@ -647,6 +651,77 @@ void LogMemoryUsage(const LiteRtLmSettings& settings, float peak_mem_mb,
   }
 }
 
+#if defined(__ANDROID__)
+// Returns the mid and big core CPUs.
+absl::StatusOr<std::vector<int>> GetMidAndBigCoreCPUs() {
+  int num_cpus = sysconf(_SC_NPROCESSORS_CONF);
+  if (num_cpus <= 0) {
+    return absl::InternalError("Failed to get number of processors.");
+  }
+  std::vector<uint64_t> max_freqs;
+  uint64_t min_max_freq = UINT64_MAX;
+  for (int i = 0; i < num_cpus; ++i) {
+    std::string path = absl::StrCat("/sys/devices/system/cpu/cpu", i,
+                                    "/cpufreq/cpuinfo_max_freq");
+    std::ifstream file(path);
+    if (!file.is_open()) continue;
+    uint64_t freq;
+    if (file >> freq) {
+      max_freqs.push_back(freq);
+      if (freq < min_max_freq) {
+        min_max_freq = freq;
+      }
+    }
+  }
+  if (max_freqs.empty()) {
+    return absl::NotFoundError("Could not find any valid CPU frequencies.");
+  }
+
+  std::vector<int> cpus;
+  for (int i = 0; i < num_cpus; ++i) {
+    if (max_freqs[i] > min_max_freq) {
+      cpus.push_back(i);
+    }
+  }
+  return cpus;
+}
+
+// Sets the CPU affinity to the given cores. If cpu_affinity_cores is empty,
+// default to all mid and big core CPUs.
+absl::Status SetCpuAffinity(const std::vector<int>& cpu_affinity_cores) {
+  std::vector<int> cpus;
+  if (!cpu_affinity_cores.empty()) {
+    cpus = cpu_affinity_cores;
+    ABSL_LOG(INFO) << "Setting user defined CPU affinity cores.";
+  } else {
+    ASSIGN_OR_RETURN(cpus, GetMidAndBigCoreCPUs());
+    // If there are less than 4 cores, skip setting CPU affinity as there might
+    // not be enough cores to skip the slowest ones.
+    if (cpus.size() < 4) {
+      ABSL_LOG(INFO) << "Not enough cores to set CPU affinity.";
+      return absl::OkStatus();
+    }
+  }
+
+  cpu_set_t mask;
+  CPU_ZERO(&mask);
+  for (int cpu : cpus) {
+    CPU_SET(cpu, &mask);
+  }
+  if (sched_setaffinity(0, sizeof(mask), &mask) != 0) {
+    return absl::InternalError(
+        absl::StrCat("Failed to set CPU affinity: ", strerror(errno)));
+  }
+
+  ABSL_LOG(INFO) << "Successfully set CPU affinity.";
+  return absl::OkStatus();
+}
+#else
+absl::Status SetCpuAffinity(const std::vector<int>&) {
+  return absl::OkStatus();
+}
+#endif  // defined(__ANDROID__)
+
 }  // namespace
 
 absl::Status RunLiteRtLm(const LiteRtLmSettings& settings,
@@ -655,6 +730,13 @@ absl::Status RunLiteRtLm(const LiteRtLmSettings& settings,
   if (settings.log_sink_file.has_value()) {
     log_sink = std::make_unique<FileLogSink>(settings.log_sink_file.value());
     absl::AddLogSink(log_sink.get());
+  }
+
+  if (settings.enable_cpu_affinity) {
+    auto status = SetCpuAffinity(settings.cpu_affinity_cores);
+    if (!status.ok()) {
+      ABSL_LOG(WARNING) << status;
+    }
   }
 
   ASSIGN_OR_RETURN(EngineSettings engine_settings,

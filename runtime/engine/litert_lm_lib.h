@@ -84,6 +84,8 @@ struct LiteRtLmSettings {
   bool force_f32 = false;
   bool multi_turns = false;
   int num_cpu_threads = 0;
+  bool enable_cpu_affinity = true;
+  std::vector<int> cpu_affinity_cores;
   // Set external tensor mode false by default since it runs slightly faster
   // during decode as the layout changes optimized for GPU inference is done by
   // GPU, not by CPU.

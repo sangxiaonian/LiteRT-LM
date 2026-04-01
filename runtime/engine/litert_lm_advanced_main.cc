@@ -70,6 +70,11 @@ ABSL_FLAG(bool, use_session, false,
           "Jinja in LLM Metadata, the user is responsible for manually "
           "applying the prompt template to the input prompt.");
 
+ABSL_FLAG(bool, enable_cpu_affinity, true, "Enable setting CPU affinity.");
+ABSL_FLAG(std::vector<std::string>, cpu_affinity_cores, {},
+          "Comma-separated list of CPU IDs to set affinity to. If empty, "
+          "default to all mid and big cores.");
+
 namespace {
 
 absl::StatusOr<std::set<int>> ParsePrefillBatchSizes(
@@ -84,6 +89,20 @@ absl::StatusOr<std::set<int>> ParsePrefillBatchSizes(
     parsed_prefill_batch_sizes.insert(size);
   }
   return parsed_prefill_batch_sizes;
+}
+
+absl::StatusOr<std::vector<int>> ParseCpuAffinityCores(
+    const std::vector<std::string>& cpu_affinity_cores) {
+  std::vector<int> parsed_cpu_affinity_cores;
+  for (const auto& cpu_affinity_core : cpu_affinity_cores) {
+    int core;
+    if (!absl::SimpleAtoi(cpu_affinity_core, &core)) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Invalid CPU affinity core: ", cpu_affinity_core));
+    }
+    parsed_cpu_affinity_cores.push_back(core);
+  }
+  return parsed_cpu_affinity_cores;
 }
 
 std::string GetInputPrompt() {
@@ -215,6 +234,10 @@ absl::Status MainHelper(int argc, char** argv) {
   settings.force_f32 = absl::GetFlag(FLAGS_force_f32);
   settings.multi_turns = absl::GetFlag(FLAGS_multi_turns);
   settings.num_cpu_threads = absl::GetFlag(FLAGS_num_cpu_threads);
+  settings.enable_cpu_affinity = absl::GetFlag(FLAGS_enable_cpu_affinity);
+  ASSIGN_OR_RETURN(
+      settings.cpu_affinity_cores,
+      ParseCpuAffinityCores(absl::GetFlag(FLAGS_cpu_affinity_cores)));
   settings.gpu_external_tensor_mode =
       absl::GetFlag(FLAGS_gpu_external_tensor_mode);
   settings.configure_magic_numbers =
