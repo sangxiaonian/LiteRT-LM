@@ -14,10 +14,12 @@
 
 """Main script for litert-lm binary."""
 
+import atexit
 import datetime
 import os
 import shutil
 import subprocess
+import sys
 
 import click
 
@@ -505,7 +507,33 @@ def run(
   )
 
 
+def suppress_native_logs():
+  """Globally suppresses native logs by redirecting fd 1 and 2 to devnull."""
+  try:
+    original_stdout_fd = os.dup(sys.stdout.fileno())
+    original_stderr_fd = os.dup(sys.stderr.fileno())
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+
+    # Overwrite fd 1 and 2 with devnull
+    os.dup2(devnull_fd, sys.stdout.fileno())
+    os.dup2(devnull_fd, sys.stderr.fileno())
+
+    # Restore Python's stdout/stderr to the original terminal
+    sys.stdout = open(original_stdout_fd, "w", closefd=False)
+    sys.stderr = open(original_stderr_fd, "w", closefd=False)
+
+    # We also register an atexit hook to ensure that the file descriptors
+    # stay redirected during global cleanup.
+    atexit.register(lambda: os.dup2(devnull_fd, 1) or os.dup2(devnull_fd, 2))
+  except Exception:  # pylint: disable=broad-exception-caught
+    pass
+
+
 def main():
+  # Workaround the aggressive log bug in the prebuilts.
+  if "--verbose" not in sys.argv:
+    suppress_native_logs()
+
   litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
   cli()
 
