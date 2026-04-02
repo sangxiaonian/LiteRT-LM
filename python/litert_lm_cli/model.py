@@ -246,7 +246,9 @@ class Model:
               # Catch Ctrl+C at the input prompt
               click.echo()
               continue
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
+              if type(e).__name__ == "error" and getattr(type(e), "__module__", "") == "termios":
+                break
               click.echo(click.style("Error during inference", fg="red"))
               traceback.print_exc()
 
