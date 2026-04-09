@@ -254,8 +254,6 @@ absl::Status EngineSettings::MaybeUpdateAndValidate(
   }
 
   if (!metadata.has_llm_model_type()) {
-    const auto& model_assets = main_executor_settings_.GetModelAssets();
-    auto model_path = model_assets.GetPath();
     if (tokenizer != nullptr) {
       ASSIGN_OR_RETURN(*metadata.mutable_llm_model_type(),
                        InferLlmModelType(metadata, tokenizer));
