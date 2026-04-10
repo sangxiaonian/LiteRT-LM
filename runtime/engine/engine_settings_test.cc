@@ -570,6 +570,22 @@ TEST(EngineSettingsTest, ParallelFileSectionLoading) {
   EXPECT_TRUE(settings->GetParallelFileSectionLoading());
 }
 
+TEST(EngineSettingsTest, ParallelExecution) {
+  auto model_assets = ModelAssets::Create("test_model_path_1");
+  ASSERT_OK(model_assets);
+  auto settings = EngineSettings::CreateDefault(*model_assets);
+  ASSERT_OK(settings);
+
+  // Default value should be true.
+  EXPECT_TRUE(settings->GetParallelExecution());
+
+  settings->SetParallelExecution(false);
+  EXPECT_FALSE(settings->GetParallelExecution());
+
+  settings->SetParallelExecution(true);
+  EXPECT_TRUE(settings->GetParallelExecution());
+}
+
 absl::Status IsExpectedLlmMetadata(const proto::LlmMetadata& llm_metadata) {
   if (!llm_metadata.has_start_token() ||
       llm_metadata.start_token().token_ids().ids_size() != 1 ||

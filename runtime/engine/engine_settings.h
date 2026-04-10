@@ -132,6 +132,11 @@ class EngineSettings {
   // in parallel.
   void SetParallelFileSectionLoading(bool parallel_file_section_loading);
 
+  // Returns true if the engine should run tasks in separate threads.
+  bool GetParallelExecution() const;
+  // Sets whether the engine should run tasks in separate threads.
+  void SetParallelExecution(bool parallel_execution);
+
  private:
   explicit EngineSettings(
       LlmExecutorSettings executor_settings,
@@ -158,6 +163,9 @@ class EngineSettings {
   // Whether the engine should load different sections of the litertlm file in
   // parallel.
   bool parallel_file_section_loading_ = true;
+
+  // Whether the advanced engine should run tasks in separate threads.
+  bool parallel_execution_ = true;
 };
 std::ostream& operator<<(std::ostream& os, const EngineSettings& settings);
 
