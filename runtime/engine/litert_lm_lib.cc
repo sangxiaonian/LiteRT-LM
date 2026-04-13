@@ -198,7 +198,7 @@ absl::StatusOr<std::unique_ptr<Constraint>> CreateRegexConstraint(
                               .constraint_string = constraint_regex});
 }
 
-absl::StatusOr<std::string> RunSingleTurnConversation(
+absl::StatusOr<Message> RunSingleTurnConversation(
     const json& content_list, const LiteRtLmSettings& settings,
     litert::lm::Engine* engine, Conversation* conversation) {
   std::stringstream captured_output;
@@ -213,6 +213,8 @@ absl::StatusOr<std::string> RunSingleTurnConversation(
         CreatePrintMessageCallback(captured_output, settings.benchmark),
         std::move(optional_args)));
     RETURN_IF_ERROR(engine->WaitUntilDone(kWaitUntilDoneTimeout));
+    CheckExpectedOutput(captured_output.str(), settings);
+    return conversation->GetHistory().back();
   } else {
     ASSIGN_OR_RETURN(
         auto model_message,
@@ -220,9 +222,9 @@ absl::StatusOr<std::string> RunSingleTurnConversation(
             json::object({{"role", "user"}, {"content", content_list}}),
             std::move(optional_args)));
     RETURN_IF_ERROR(PrintMessage(model_message, captured_output));
+    CheckExpectedOutput(captured_output.str(), settings);
+    return model_message;
   }
-  CheckExpectedOutput(captured_output.str(), settings);
-  return captured_output.str();
 }
 
 absl::Status RunMultiTurnConversation(const LiteRtLmSettings& settings,
