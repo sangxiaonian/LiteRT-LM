@@ -319,6 +319,7 @@ absl::StatusOr<std::vector<int>> LlmLiteRtMtpDrafter::RunDraftingLoop(
   TensorBuffer* activations_ptr =
       activations.has_value() ? &activations.value() : nullptr;
   for (int i = 0; i < num_draft_steps_; ++i) {
+    LITERT_RETURN_IF_ERROR(PrepareDrafterOutputBuffers());
     // Concat and lookup embeddings with previous activations.
     // Embedding lookup has shape [B = 1, T = 1, D = 1536]
     // Drafter output activation has shape [B = 1, T = 1, D = 1536]
@@ -440,7 +441,6 @@ absl::StatusOr<std::vector<std::vector<int>>> LlmLiteRtMtpDrafter::Draft(
         output_kv_cache_buffers) {
   RETURN_IF_ERROR(
       PrepareDrafterInputBuffers(position, output_kv_cache_buffers));
-  RETURN_IF_ERROR(PrepareDrafterOutputBuffers());
 
   ASSIGN_OR_RETURN(std::vector<int> drafted_tokens,
                    RunDraftingLoop(token_id, activations));
