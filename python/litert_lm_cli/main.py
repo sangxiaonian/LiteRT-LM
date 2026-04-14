@@ -443,6 +443,12 @@ def benchmark(
         " expected."
     ),
 )
+@click.option(
+    "--max-num-tokens",
+    type=int,
+    default=None,
+    help="Maximum number of tokens for the KV cache.",
+)
 @common_inference_options
 def run(
     model_reference,
@@ -455,6 +461,7 @@ def run(
     no_template=False,
     from_huggingface_repo=None,
     huggingface_token=None,
+    max_num_tokens=None,
 ):
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
@@ -474,6 +481,7 @@ def run(
       templates or stripping stop tokens.
     from_huggingface_repo: The HuggingFace repository ID.
     huggingface_token: The HuggingFace API token.
+    max_num_tokens: Maximum number of tokens for the KV cache.
   """
   # If the stdin is not connected to the terminal, e.g., piped or redirected
   # input, then handle the input as the one-shot prompt.
@@ -535,6 +543,7 @@ def run(
       preset=preset,
       enable_speculative_decoding=enable_speculative_decoding,
       no_template=no_template,
+      max_num_tokens=max_num_tokens,
   )
 
 
