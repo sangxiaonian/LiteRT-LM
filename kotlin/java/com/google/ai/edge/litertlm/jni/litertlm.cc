@@ -849,7 +849,8 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
     JNIEnv* env, jclass thiz, jlong engine_pointer, jobject sampler_config_obj,
     jstring messages_json_string, jstring tools_description_json_string,
     jstring channels_json_string, jstring extra_context_json_string,
-    jboolean enable_constrained_decoding) {
+    jboolean enable_constrained_decoding,
+    jboolean filter_channel_content_from_kv_cache) {
   Engine* engine = reinterpret_cast<Engine*>(engine_pointer);
 
   // Create a native SessionConfig
@@ -895,7 +896,9 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
       ConversationConfig::Builder()
           .SetSessionConfig(session_config)
           .SetPreface(json_preface)
-          .SetEnableConstrainedDecoding(enable_constrained_decoding);
+          .SetEnableConstrainedDecoding(enable_constrained_decoding)
+          .SetFilterChannelContentFromKvCache(
+              filter_channel_content_from_kv_cache);
 
   // Set the channels, if provided.
   // If channels is nullptr, the Conversation will use the channels defined in

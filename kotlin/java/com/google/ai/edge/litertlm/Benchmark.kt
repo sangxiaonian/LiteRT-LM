@@ -81,6 +81,7 @@ fun benchmark(
         null, // channelsJsonString
         "{}", // extraContextJsonString
         false, // enableConversationConstrainedDecoding
+        false, // filterChannelContentFromKvCache
       )
 
     Conversation(conversationHandle).use { conversation ->

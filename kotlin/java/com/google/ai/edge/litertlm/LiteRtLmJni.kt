@@ -195,6 +195,7 @@ internal object LiteRtLmJni {
    *   default from the model or engine. If empty, channels will be disabled.
    * @param enableConversationConstrainedDecoding Whether to enable conversation constrained
    *   decoding.
+   * @param filterChannelContentFromKvCache Whether to filter channel content from the KV cache.
    * @return A pointer to the native conversation instance.
    */
   external fun nativeCreateConversation(
@@ -205,6 +206,7 @@ internal object LiteRtLmJni {
     channelsJsonString: String?,
     extraContextJsonString: String,
     enableConversationConstrainedDecoding: Boolean,
+    filterChannelContentFromKvCache: Boolean,
   ): Long
 
   /**
