@@ -42,7 +42,9 @@ pytype_strict_library(
         "//python/litert_lm",
         requirement("click"),
         requirement("prompt_toolkit"),
-    ],
+    ] + select({
+        "//conditions:default": [],
+    }),
     imports = [".."],
 )
 

@@ -31,8 +31,8 @@ import litert_lm
 
 try:
   # pylint: disable=g-import-not-at-top
-  from litert_lm.adb import adb_benchmark
-  from litert_lm.adb import adb_engine
+  from litert_lm.adb import adb_benchmark  # pytype: disable=import-error
+  from litert_lm.adb import adb_engine  # pytype: disable=import-error
 
   _HAS_ADB = True
 except ImportError:
