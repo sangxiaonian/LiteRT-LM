@@ -78,6 +78,9 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
     uint64_t decode_drafter_inference_latency_us = 0;
     uint64_t decode_cache_update_inference_latency_us = 0;
     uint64_t decode_sampling_latency_us = 0;
+    uint64_t decode_mtp_rejection_sampling_latency_us = 0;
+    uint64_t decode_mtp_activation_copy_latency_us = 0;
+    uint64_t decode_token_queue_latency_us = 0;
 
     // MTP / Speculative Decoding latency stats.
     int mtp_num_draft_tokens = 0;
@@ -145,6 +148,16 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
   enum class SpeculativeDecodingType {
     kNone,
     kMTP,
+  };
+
+  enum class KVCacheUpdateMethod {
+    kModel,
+    kWH,
+  };
+
+  enum class MaskUpdateMethod {
+    kModel,
+    kWH,
   };
 
   struct InferenceContext {
@@ -311,6 +324,20 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
         drafter_aux_context_(std::move(drafter_aux_context)),
         per_tensor_logits_scale_(quantization_params.scale),
         per_tensor_logits_zero_point_(quantization_params.zero_point) {
+    auto npu_config_status = executor_settings_.GetBackendConfig<NpuConfig>();
+    if (npu_config_status.ok()) {
+      npu_config_ = *npu_config_status;
+      if (npu_config_.use_hw_masking_for_npu) {
+        prefill_mask_update_method_ = MaskUpdateMethod::kWH;
+        decode_mask_update_method_ = MaskUpdateMethod::kWH;
+        mtp_mask_update_method_ = MaskUpdateMethod::kWH;
+        verify_mask_update_method_ = MaskUpdateMethod::kWH;
+      }
+      if (npu_config_.use_hw_cache_update_for_npu) {
+        prefill_kv_cache_update_method_ = KVCacheUpdateMethod::kWH;
+        decode_kv_cache_update_method_ = KVCacheUpdateMethod::kWH;
+      }
+    }
     if (embedder_per_layer_context_.has_value()) {
       latency_stats_.prefill_embedder_per_layer_inference_latency_us = 0;
       latency_stats_.decode_embedder_per_layer_inference_latency_us = 0;
@@ -547,6 +574,16 @@ class LlmLiteRtNpuCompiledModelExecutor : public LlmExecutor {
       LogitsQuantizationParams quantization_params);
 
   LlmExecutorSettings executor_settings_;
+  NpuConfig npu_config_;
+  KVCacheUpdateMethod prefill_kv_cache_update_method_ =
+      KVCacheUpdateMethod::kModel;
+  KVCacheUpdateMethod decode_kv_cache_update_method_ =
+      KVCacheUpdateMethod::kModel;
+  MaskUpdateMethod prefill_mask_update_method_ = MaskUpdateMethod::kModel;
+  MaskUpdateMethod decode_mask_update_method_ = MaskUpdateMethod::kModel;
+  MaskUpdateMethod mtp_mask_update_method_ = MaskUpdateMethod::kModel;
+  MaskUpdateMethod verify_mask_update_method_ = MaskUpdateMethod::kModel;
+
   ::litert::Environment& env_;
   std::unique_ptr<ModelResources> resources_;
   LatencyStats latency_stats_;
