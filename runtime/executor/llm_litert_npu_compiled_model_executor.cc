@@ -18,7 +18,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -62,6 +61,7 @@
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/llm_executor_processed_tokens.h"
 #include "runtime/executor/llm_executor_settings.h"
+#include "runtime/executor/llm_litert_npu_compiled_model_executor_utils.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/status_macros.h"  // NOLINT
 
@@ -87,6 +87,11 @@ constexpr char cache_v17[] = "kv_cache_v_17";
 
 constexpr absl::string_view kv_cache_k_root_name = "kv_cache_k_";
 constexpr absl::string_view kv_cache_v_root_name = "kv_cache_v_";
+
+// Whether to use NEON optimizations for sampling.
+// TODO(yunandrew): Remove this once the NEON optimizations are stable, or
+// engine level provides nob for controlling this.
+static constexpr bool kUseNeonSamplingIfAvailable = false;
 
 constexpr bool kEnableDecodingDebugLogging = false;
 #define NPU_EXECUTOR_LOG(X) ABSL_LOG_IF(X, kEnableDecodingDebugLogging)
@@ -225,23 +230,6 @@ absl::Status SetFirstElement(::litert::TensorBuffer& buffer, int32_t value) {
   return absl::OkStatus();
 }
 
-template <typename T>
-absl::StatusOr<int> FindMaxIndex(const TensorBuffer& decoded_logits) {
-  LITERT_ASSIGN_OR_RETURN(auto logits_buffer,
-                          CopyFromTensorBuffer<T>(decoded_logits));
-  if (logits_buffer.empty()) {
-    return absl::InvalidArgumentError("Logits buffer is empty.");
-  }
-  int max_index = 0;
-  T max_value = std::numeric_limits<T>::min();
-  for (int i = 0; i < logits_buffer.size(); ++i) {
-    if (logits_buffer[i] > max_value) {
-      max_value = logits_buffer[i];
-      max_index = i;
-    }
-  }
-  return max_index;
-}
 // Copies the raw bytes from the tensor buffer.
 absl::StatusOr<std::vector<uint8_t>> CopyRawBytesFromTensorBuffer(
     const TensorBuffer& buffer) {
@@ -266,25 +254,6 @@ absl::StatusOr<std::vector<uint8_t>> CopyRawBytesFromTensorBuffer(
     return absl::InvalidArgumentError(
         absl::StrCat("Unsupported tensor element type for copying: ",
                      tensor_type.ElementType()));
-  }
-}
-
-// Applies greedy sampling to the decoded logits. TODO(b/416702864) this logic
-// should be replaced by the LiteRT-LM sampler once it supports greedy sampling
-// for quantized tensors.
-absl::StatusOr<int> ApplyGreedySampling(const TensorBuffer& decoded_logits) {
-  LITERT_ASSIGN_OR_RETURN(RankedTensorType logits_tensor_type,
-                          decoded_logits.TensorType());
-  if (logits_tensor_type.ElementType() == ::litert::ElementType::Float32) {
-    return FindMaxIndex<float>(decoded_logits);
-  } else if (logits_tensor_type.ElementType() == ::litert::ElementType::Int16) {
-    return FindMaxIndex<int16_t>(decoded_logits);
-  } else if (logits_tensor_type.ElementType() == ::litert::ElementType::Int8) {
-    return FindMaxIndex<int8_t>(decoded_logits);
-  } else {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Unsupported tensor element type for greedy sampling: ",
-                     logits_tensor_type.ElementType()));
   }
 }
 
@@ -1575,7 +1544,8 @@ LlmLiteRtNpuCompiledModelExecutor::Decode(
         mtp_start_token_id,
         ApplyGreedySampling(
             llm_inference_context_
-                .decode_output_buffers[LlmSignatures::kDecodeLogitsOutput]));
+                .decode_output_buffers[LlmSignatures::kDecodeLogitsOutput],
+            kUseNeonSamplingIfAvailable));
 
     // The MTP drafter starts from the position of the token we just
     // generated.
@@ -1695,8 +1665,9 @@ LlmLiteRtNpuCompiledModelExecutor::Decode(
         llm_inference_context_
             .decode_output_buffers[LlmSignatures::kDecodeLogitsOutput];
     auto start_sample = absl::Now();
-    LITERT_ASSIGN_OR_RETURN(const int max_index,
-                            ApplyGreedySampling(decoded_logits));
+    LITERT_ASSIGN_OR_RETURN(
+        const int max_index,
+        ApplyGreedySampling(decoded_logits, kUseNeonSamplingIfAvailable));
     latency_stats_.decode_sampling_latency_us +=
         absl::ToInt64Microseconds(absl::Now() - start_sample);
 
@@ -2221,9 +2192,9 @@ LlmLiteRtNpuCompiledModelExecutor::RunDrafterLoop(int start_step,
 
     start = absl::Now();
     LITERT_ASSIGN_OR_RETURN(
-        int draft_id,
-        ApplyGreedySampling(
-            ctx.mtp_output_buffers[MtpSignatures::kOutputLogits]));
+        int draft_id, ApplyGreedySampling(
+                          ctx.mtp_output_buffers[MtpSignatures::kOutputLogits],
+                          kUseNeonSamplingIfAvailable));
     end = absl::Now();
     latency_stats_.decode_sampling_latency_us +=
         absl::ToInt64Microseconds(end - start);
@@ -2275,7 +2246,7 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
   const uint8_t* logits_ptr =
       base_ptr + (batch_idx * vocab_size * element_size);
 
-  auto find_max_index = [&](auto ptr) {
+  auto find_max_index_plain = [&](auto ptr) {
     int max_idx = 0;
     auto max_val = ptr[0];
     for (int i = 1; i < vocab_size; ++i) {
@@ -2288,11 +2259,29 @@ absl::StatusOr<int> GetLogitsAtBatchIndex(const TensorBuffer& logits_buffer,
   };
 
   if (tensor_type.ElementType() == ::litert::ElementType::Float32) {
-    return find_max_index(reinterpret_cast<const float*>(logits_ptr));
+#if defined(__ANDROID__) && defined(__ARM_NEON)
+    if (kUseNeonSamplingIfAvailable) {
+      return FindMaxIndexFloatNeon(reinterpret_cast<const float*>(logits_ptr),
+                                   vocab_size);
+    }
+#endif
+    return find_max_index_plain(reinterpret_cast<const float*>(logits_ptr));
   } else if (tensor_type.ElementType() == ::litert::ElementType::Int16) {
-    return find_max_index(reinterpret_cast<const int16_t*>(logits_ptr));
+#if defined(__ANDROID__) && defined(__ARM_NEON)
+    if (kUseNeonSamplingIfAvailable) {
+      return FindMaxIndexInt16Neon(reinterpret_cast<const int16_t*>(logits_ptr),
+                                   vocab_size);
+    }
+#endif
+    return find_max_index_plain(reinterpret_cast<const int16_t*>(logits_ptr));
   } else if (tensor_type.ElementType() == ::litert::ElementType::Int8) {
-    return find_max_index(reinterpret_cast<const int8_t*>(logits_ptr));
+#if defined(__ANDROID__) && defined(__ARM_NEON)
+    if (kUseNeonSamplingIfAvailable) {
+      return FindMaxIndexInt8Neon(reinterpret_cast<const int8_t*>(logits_ptr),
+                                  vocab_size);
+    }
+#endif
+    return find_max_index_plain(reinterpret_cast<const int8_t*>(logits_ptr));
   }
 
   return absl::UnimplementedError("Unsupported logit type for batch sampling.");
