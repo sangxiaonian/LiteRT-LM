@@ -443,6 +443,12 @@ def benchmark(
         " expected."
     ),
 )
+@click.option(
+    "--filter-channel-content-from-kv-cache",
+    is_flag=True,
+    default=False,
+    help="Whether to filter channel content from the KV cache.",
+)
 @common_inference_options
 def run(
     model_reference,
@@ -455,6 +461,7 @@ def run(
     no_template=False,
     from_huggingface_repo=None,
     huggingface_token=None,
+    filter_channel_content_from_kv_cache=False,
 ):
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
@@ -535,6 +542,7 @@ def run(
       preset=preset,
       enable_speculative_decoding=enable_speculative_decoding,
       no_template=no_template,
+      filter_channel_content_from_kv_cache=filter_channel_content_from_kv_cache,
   )
 
 

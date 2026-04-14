@@ -112,6 +112,7 @@ data class EngineConfig(
  *   key. If `null`, uses the default channel configuration from the `LlmMetadata`. If empty,
  *   channels will be disabled.
  * @property extraContext Optional context passed to the prompt template rendering.
+ * @property filterChannelContentFromKvCache Whether to filter channel content from the KV cache.
  */
 data class ConversationConfig
 @JvmOverloads
@@ -123,6 +124,7 @@ constructor(
   val automaticToolCalling: Boolean = true,
   val channels: List<Channel>? = null,
   val extraContext: Map<String, Any> = emptyMap(),
+  val filterChannelContentFromKvCache: Boolean = false,
 )
 
 /**

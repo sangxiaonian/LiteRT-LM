@@ -109,6 +109,7 @@ class AbstractEngine(abc.ABC):
       ) = None,
       tool_event_handler: ToolEventHandler | None = None,
       extra_context: collections.abc.Mapping[str, Any] | None = None,
+      filter_channel_content_from_kv_cache: bool = False,
   ) -> AbstractConversation:
     """Creates a new conversation for this engine.
 

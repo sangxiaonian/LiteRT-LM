@@ -612,7 +612,8 @@ NB_MODULE(litert_lm_ext, module) {
           "create_conversation",
           [](const nb::object& self, const nb::handle& messages,
              const nb::handle& tools, const nb::handle& tool_event_handler,
-             const nb::handle& extra_context) {
+             const nb::handle& extra_context,
+             bool filter_channel_content_from_kv_cache) {
             Engine& engine = nb::cast<Engine&>(self);
 
             auto builder = ConversationConfig::Builder();
@@ -657,6 +658,9 @@ NB_MODULE(litert_lm_ext, module) {
               builder.SetPreface(json_preface);
             }
 
+            builder.SetFilterChannelContentFromKvCache(
+                filter_channel_content_from_kv_cache);
+
             auto config = VALUE_OR_THROW(builder.Build(engine));
 
             auto conversation =
@@ -681,7 +685,8 @@ NB_MODULE(litert_lm_ext, module) {
           nb::kw_only(), nb::arg("messages") = nb::none(),
           nb::arg("tools") = nb::none(),
           nb::arg("tool_event_handler") = nb::none(),
-          nb::arg("extra_context") = nb::none())
+          nb::arg("extra_context") = nb::none(),
+          nb::arg("filter_channel_content_from_kv_cache") = false)
       .def(
           "create_session",
           [](Engine& self, bool apply_prompt_template) {
