@@ -139,6 +139,8 @@ py_test(
     ],
     deps = [
         ":serve",
+        "//python/litert_lm",
+        "//python/litert_lm:interfaces",
         "@absl_py//absl/testing:absltest",
     ],
     imports = [".."],

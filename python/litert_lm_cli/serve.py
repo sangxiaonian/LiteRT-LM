@@ -17,6 +17,7 @@
 Reference: https://ai.google.dev/api/generate-content
 """
 
+import collections.abc
 import http.server
 import json
 import re
@@ -34,6 +35,23 @@ STREAM_GEN_CONTENT_RE = re.compile(
 
 _current_engine: Optional[litert_lm.Engine] = None
 _current_model_id: Optional[str] = None
+
+
+class _ProxyTool(litert_lm.Tool):
+  """A tool that proxies OpenAPI definitions without implementation."""
+
+  def __init__(self, definition: dict[str, Any]):
+    self._definition = definition
+
+  def get_tool_description(self) -> dict[str, Any]:
+    return self._definition
+
+  def execute(self, param: collections.abc.Mapping[str, Any]) -> Any:
+    # In the serve command, `automatic_tool_calling` is set to False, so the
+    # engine will return `tool_calls` to the client instead of executing them
+    # locally. Therefore, this tool's `execute` method should never be called by
+    # the engine.
+    raise NotImplementedError("Proxy tools are not executable.")
 
 
 def get_engine(model_id: str) -> litert_lm.Engine:
@@ -91,10 +109,35 @@ def gemini_to_litertlm_message(
 
   parts = gemini_content.get("parts", [])
   litertlm_parts = []
+  tool_calls = []
   for p in parts:
     if "text" in p:
       litertlm_parts.append({"type": "text", "text": p["text"]})
-  return {"role": role, "content": litertlm_parts}
+    if "functionCall" in p:
+      fc = p["functionCall"]
+      tool_calls.append(
+          {
+              "function": {
+                  "name": fc.get("name"),
+                  "arguments": fc.get("args"),
+              }
+          }
+      )
+    if "functionResponse" in p:
+      fr = p["functionResponse"]
+      litertlm_parts.append({
+          "type": "tool_response",
+          "name": fr.get("name"),
+          "response": fr.get("response"),
+      })
+      # LiteRT-LM uses "tool" as role for the function response.
+      role = "tool"
+
+  return {
+      "role": role,
+      **({"content": litertlm_parts} if litertlm_parts else {}),
+      **({"tool_calls": tool_calls} if tool_calls else {}),
+  }
 
 
 def litertlm_to_gemini_response(
@@ -106,12 +149,22 @@ def litertlm_to_gemini_response(
     if item.get("type") == "text":
       parts.append({"text": item.get("text")})
 
+  for tc in litertlm_response.get("tool_calls", []):
+    f = tc.get("function", {})
+    parts.append(
+        {
+            "functionCall": {
+                "name": f.get("name"),
+                "args": f.get("arguments"),
+            }
+        }
+    )
+
   candidate: dict[str, Any] = {
       "content": {"role": "model", "parts": parts},
       "index": 0,
+      **({"finishReason": finish_reason} if finish_reason else {}),
   }
-  if finish_reason:
-    candidate["finishReason"] = finish_reason
 
   return {"candidates": [candidate]}
 
@@ -144,6 +197,9 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
       self.send_error(400, "Invalid JSON")
       return
 
+    click.echo(click.style(f"Request Body ({model_id}):", fg="magenta"))
+    click.echo(json.dumps(body, indent=2, ensure_ascii=False))
+
     try:
       engine = get_engine(model_id)
     except FileNotFoundError as e:
@@ -160,6 +216,18 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
       system_instruction = "".join(p.get("text", "") for p in si_parts)
 
     messages = [gemini_to_litertlm_message(c) for c in body.get("contents", [])]
+
+    tools = []
+    tools_data = body.get("tools")
+    if tools_data:
+      for tool_entry in tools_data:
+        for fd in tool_entry.get("functionDeclarations", []):
+          tools.append(
+              _ProxyTool({
+                  "type": "function",
+                  "function": fd,
+              })
+          )
 
     if not messages:
       self.send_error(400, "No contents provided")
@@ -179,7 +247,11 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
     context_messages.extend(messages)
 
     try:
-      with engine.create_conversation(messages=context_messages) as conv:
+      with engine.create_conversation(
+          messages=context_messages,
+          tools=tools or None,
+          automatic_tool_calling=False,
+      ) as conv:
         if stream_match:
           self.send_response(200)
           self.send_header("Content-Type", "text/event-stream")
@@ -187,6 +259,9 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
           self.end_headers()
 
           for chunk in conv.send_message_async(last_msg):
+            click.echo(click.style("Stream Chunk:", fg="magenta"))
+            click.echo(json.dumps(chunk, ensure_ascii=False))
+
             resp = litertlm_to_gemini_response(chunk, finish_reason="")
             self.wfile.write(
                 f"data: {json.dumps(resp, ensure_ascii=False)}\n\n".encode(
@@ -199,6 +274,9 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
           final_resp = litertlm_to_gemini_response(
               {"content": []}, finish_reason="STOP"
           )
+          click.echo(click.style("Final Stream Response:", fg="magenta"))
+          click.echo(json.dumps(final_resp, ensure_ascii=False))
+
           self.wfile.write(
               f"data: {json.dumps(final_resp, ensure_ascii=False)}\n\n".encode(
                   "utf-8"
@@ -207,7 +285,13 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
           self.wfile.flush()
         else:
           response = conv.send_message(last_msg)
+          click.echo(click.style("Raw Engine Response:", fg="magenta"))
+          click.echo(json.dumps(response, ensure_ascii=False))
+
           resp_body = litertlm_to_gemini_response(response)
+          click.echo(click.style("Gemini Response Body:", fg="magenta"))
+          click.echo(json.dumps(resp_body, indent=2, ensure_ascii=False))
+
           self.send_response(200)
           self.send_header("Content-Type", "application/json")
           self.end_headers()
@@ -224,13 +308,8 @@ class GeminiHandler(http.server.BaseHTTPRequestHandler):
           pass
 
 
-def run_server(port: int, verbose: bool):
+def run_server(port: int):
   """Starts the HTTP server."""
-  # The BaseHTTPRequestHandler uses sys.stderr by default for request logs.
-  # If verbose is not set, we can quiet down the engine logs.
-  if not verbose:
-    litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
-
   server_address = ("localhost", port)
   httpd = http.server.HTTPServer(server_address, GeminiHandler)
   click.echo(
@@ -266,4 +345,7 @@ def register(cli):
       port: Port to listen on.
       verbose: Whether to enable verbose logging.
     """
-    run_server(port, verbose)
+    if verbose:
+      litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
+
+    run_server(port)

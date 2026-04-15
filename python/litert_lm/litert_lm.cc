@@ -115,7 +115,8 @@ nlohmann::json HandleToolCalls(const nlohmann::json& response,
   for (const auto& tool_call : response["tool_calls"]) {
     if (!tool_call.contains("function")) continue;
     std::string name = tool_call["function"]["name"];
-    nlohmann::json arguments = tool_call["function"]["arguments"];
+    nlohmann::json arguments =
+        tool_call["function"].value("arguments", nlohmann::json::object());
 
     if (!tool_event_handler.is_none()) {
       bool allowed = nb::cast<bool>(
@@ -619,7 +620,7 @@ NB_MODULE(litert_lm_ext, module) {
           "create_conversation",
           [](const nb::object& self, const nb::handle& messages,
              const nb::handle& tools, const nb::handle& tool_event_handler,
-             const nb::handle& extra_context) {
+             bool automatic_tool_calling, const nb::handle& extra_context) {
             Engine& engine = nb::cast<Engine&>(self);
 
             auto builder = ConversationConfig::Builder();
@@ -634,6 +635,10 @@ NB_MODULE(litert_lm_ext, module) {
             }
 
             if (!tools.is_none()) {
+              nb::object tool_class =
+                  nb::module_::import_(
+                      "litert_lm")
+                      .attr("Tool");
               nb::object tool_from_function =
                   nb::module_::import_(
                       "litert_lm."
@@ -642,10 +647,18 @@ NB_MODULE(litert_lm_ext, module) {
 
               nlohmann::json json_tools = nlohmann::json::array();
               for (auto tool : nb::cast<nb::list>(tools)) {
-                auto tool_obj = tool_from_function(tool);
+                nb::object tool_obj = nb::borrow(tool);
+                if (!nb::isinstance(tool_obj, tool_class)) {
+                  tool_obj = tool_from_function(tool_obj);
+                }
                 auto description = tool_obj.attr("get_tool_description")();
-                std::string name =
-                    nb::cast<std::string>(description["function"]["name"]);
+                std::string name;
+                try {
+                  name = nb::cast<std::string>(description["function"]["name"]);
+                } catch (...) {
+                  throw std::invalid_argument(
+                      "Tool description must contain ['function']['name']");
+                }
                 py_tool_map[name.c_str()] = tool_obj;
                 json_tools.push_back(nb::cast<nlohmann::json>(description));
               }
@@ -672,6 +685,8 @@ NB_MODULE(litert_lm_ext, module) {
             nb::object py_conversation = nb::cast(std::move(conversation));
             py_conversation.attr("_tool_map") = py_tool_map;
             py_conversation.attr("tool_event_handler") = tool_event_handler;
+            py_conversation.attr("automatic_tool_calling") =
+                automatic_tool_calling;
             py_conversation.attr("extra_context") = extra_context;
             if (messages.is_none()) {
               py_conversation.attr("messages") = nb::list();
@@ -688,6 +703,7 @@ NB_MODULE(litert_lm_ext, module) {
           nb::kw_only(), nb::arg("messages") = nb::none(),
           nb::arg("tools") = nb::none(),
           nb::arg("tool_event_handler") = nb::none(),
+          nb::arg("automatic_tool_calling") = true,
           nb::arg("extra_context") = nb::none())
       .def(
           "create_session",
@@ -806,12 +822,18 @@ NB_MODULE(litert_lm_ext, module) {
               tool_event_handler = self.attr("tool_event_handler");
             }
 
+            bool automatic_tool_calling = true;
+            if (nb::hasattr(self, "automatic_tool_calling")) {
+              automatic_tool_calling =
+                  nb::cast<bool>(self.attr("automatic_tool_calling"));
+            }
+
             for (int i = 0; i < kRecurringToolCallLimit; ++i) {
               absl::StatusOr<Message> result =
                   conversation.SendMessage(current_message);
               Message response = VALUE_OR_THROW(std::move(result));
 
-              if (response.contains("tool_calls") &&
+              if (automatic_tool_calling && response.contains("tool_calls") &&
                   !response["tool_calls"].empty()) {
                 current_message =
                     HandleToolCalls(response, tool_map, tool_event_handler);
@@ -843,8 +865,13 @@ NB_MODULE(litert_lm_ext, module) {
             struct AsyncState {
               int tool_call_count = 0;
               nlohmann::json pending_tool_response = nullptr;
+              bool automatic_tool_calling = true;
             };
             auto state = std::make_shared<AsyncState>();
+            if (nb::hasattr(self, "automatic_tool_calling")) {
+              state->automatic_tool_calling =
+                  nb::cast<bool>(self.attr("automatic_tool_calling"));
+            }
 
             struct Callback {
               nb::object self;
@@ -859,7 +886,8 @@ NB_MODULE(litert_lm_ext, module) {
                   return;
                 }
 
-                if (message->contains("tool_calls") &&
+                if (state->automatic_tool_calling &&
+                    message->contains("tool_calls") &&
                     !(*message)["tool_calls"].empty()) {
                   nb::gil_scoped_acquire acquire;
                   state->pending_tool_response =
