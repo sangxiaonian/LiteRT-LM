@@ -22,14 +22,17 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit"
-    runs-on: LiteRT_Linux_x64
+    runs-on: "linux-x86-n2-16"
+    container:
+      image: ghcr.io/odml/litert-lm/ubuntu-22.04:latest
+      options: --privileged
     permissions:
       actions: write  # For gh cache delete.
       contents: write  # For gh release upload.
     env:
-      MODEL_KEY: gemma-3-1b-it-v1
-      MODEL_PATH: ./models/gemma3-1b-it-int4.litertlm
-      MODEL_URL: https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm
+      MODEL_KEY: gemma-4-E4B-it-litert-lm
+      MODEL_PATH: ./models/gemma-4-E4B-it-litert-lm.litertlm
+      MODEL_URL: https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       GH_TOKEN: ${{ github.token }}  # For gh release upload.
       REFRESH_CACHE: ${{ github.event_name == 'schedule' ||

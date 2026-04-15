@@ -1,0 +1,11 @@
+name: Runner Test
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: linux-x86-n2-64
+    container:
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
+    steps:
+    - run: echo "This job uses runner scale set runners!"
