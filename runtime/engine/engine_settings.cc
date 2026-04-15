@@ -424,6 +424,7 @@ std::ostream& operator<<(std::ostream& os, const EngineSettings& settings) {
   }
   os << "  ParallelFileSectionLoading: "
      << settings.GetParallelFileSectionLoading() << std::endl;
+  os << "  ParallelExecution: " << settings.GetParallelExecution() << std::endl;
   return os;
 }
 
@@ -441,6 +442,14 @@ bool EngineSettings::GetParallelFileSectionLoading() const {
 void EngineSettings::SetParallelFileSectionLoading(
     bool parallel_file_section_loading) {
   parallel_file_section_loading_ = parallel_file_section_loading;
+}
+
+bool EngineSettings::GetParallelExecution() const {
+  return parallel_execution_;
+}
+
+void EngineSettings::SetParallelExecution(bool parallel_execution) {
+  parallel_execution_ = parallel_execution;
 }
 
 SessionConfig SessionConfig::CreateDefault() {
