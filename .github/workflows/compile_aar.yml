@@ -1,69 +1,62 @@
-name: 官方标准编译 LiteRT-LM AAR
+name: 编译 sangxiaonian LiteRT-LM AAR
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch: # 允许手动点击按钮触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 90 # 编译 LLM 较慢，给足时间
+
     steps:
-      - name: 拉取源码 (v0.10.2)
+      - name: 检出你的仓库代码
         uses: actions/checkout@v4
         with:
-          ref: 'v0.10.2'
+          ref: 'v0.10.2' # 锁定到你需要的 Release 版本
 
-      - name: 设置 Java 环境
+      - name: 安装 Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 设置 Python 环境
+      - name: 安装 Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 安装 Bazel 7.6.1
+      - name: 安装 Bazelisk (Bazel 管理工具)
         run: |
           sudo npm install -g @bazel/bazelisk
-          # 强制指定版本
+          # 强制使用官方要求的 7.6.1 版本
           export USE_BAZEL_VERSION=7.6.1
 
-      - name: 配置 Android SDK & NDK (r25b)
+      - name: 准备 Android SDK & NDK
         uses: android-actions/setup-android@v3
         with:
-          # 官方推荐 r25b
-          ndk-version: '25.1.8937393' 
+          ndk-version: '25.1.8937393' # 官方推荐的 r25b
 
-      - name: 执行官方配置与编译
+      - name: 自动化配置与编译
         run: |
-          # 1. 明确设置官方脚本需要的环境变量
+          # 设置环境变量，这是 Bazel 识别 Android NDK 的关键
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
-          
-          # 2. 运行配置脚本 (自动回答 y 以开启 Android 支持)
-          if [ -f "configure.py" ]; then
-            echo -e "y\n\n\n\n\n\n" | python3 configure.py
-          elif [ -f "configure" ]; then
-            chmod +x configure
-            echo -e "y\n\n\n\n\n\n" | ./configure
-          fi
 
-          # 3. 执行官方指定的 AAR 编译命令
-          # 文档指出目标是 //java:litertlm_android
-          # 如果报错找不到，脚本会自动尝试底层路径
-          if [ -d "java" ]; then
-            bazel build --config=android_arm64 //java:litertlm_android
-          else
-            bazel build --config=android_arm64 //runtime/bindings/java:litertlm_android
-          fi
+          # 1. 运行配置脚本
+          # 文档提到必须执行此步来生成 .bazelrc 配置
+          echo -e "y\n\n\n\n\n" | python3 configure.py
 
-      - name: 上传编译产物
+          # 2. 执行编译
+          # 经确认，v0.10.2 的 AAR 目标为 //runtime/bindings/java:litertlm_android
+          # 加上资源限制，防止 GitHub Actions 内存溢出
+          bazel build --config=android_arm64 \
+            --local_ram_resources=HOST_RAM*.6 \
+            //runtime/bindings/java:litertlm_android
+
+      - name: 上传 AAR 编译产物
         uses: actions/upload-artifact@v4
         with:
-          name: litert-lm-aar-v0.10.2
-          # 递归搜索所有生成的 .aar 文件
+          name: litert-lm-aar-sangxiaonian
           path: |
-            bazel-bin/**/*.aar
+            bazel-bin/runtime/bindings/java/*.aar
           if-no-files-found: error
