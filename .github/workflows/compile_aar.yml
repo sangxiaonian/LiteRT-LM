@@ -1,18 +1,18 @@
 name: 编译 sangxiaonian LiteRT-LM AAR
 
 on:
-  workflow_dispatch: # 允许手动点击按钮触发
+  workflow_dispatch: 
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90 # 编译 LLM 较慢，给足时间
+    timeout-minutes: 90
 
     steps:
-      - name: 检出你的仓库代码
+      - name: 检出源码
         uses: actions/checkout@v4
         with:
-          ref: 'v0.10.2' # 锁定到你需要的 Release 版本
+          ref: 'v0.10.2'
 
       - name: 安装 Java 17
         uses: actions/setup-java@v4
@@ -20,40 +20,31 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 安装 Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: 安装 Bazelisk (Bazel 管理工具)
+      - name: 安装 Bazelisk
         run: |
           sudo npm install -g @bazel/bazelisk
-          # 强制使用官方要求的 7.6.1 版本
           export USE_BAZEL_VERSION=7.6.1
 
       - name: 准备 Android SDK & NDK
         uses: android-actions/setup-android@v3
         with:
-          ndk-version: '25.1.8937393' # 官方推荐的 r25b
+          ndk-version: '25.1.8937393' 
 
-      - name: 自动化配置与编译
+      - name: 直接执行编译
         run: |
-          # 设置环境变量，这是 Bazel 识别 Android NDK 的关键
+          # 注入环境变量，Bazel 会自动读取这些变量来配置 Android 工具链
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
 
-          # 1. 运行配置脚本
-          # 文档提到必须执行此步来生成 .bazelrc 配置
-          echo -e "y\n\n\n\n\n" | python3 configure.py
-
-          # 2. 执行编译
-          # 经确认，v0.10.2 的 AAR 目标为 //runtime/bindings/java:litertlm_android
-          # 加上资源限制，防止 GitHub Actions 内存溢出
+          # 在 v0.10.2 中，Bazel 会自动识别环境，无需运行 configure.py
+          # 我们直接尝试编译 AAR
+          # 注意：--noenable_bzlmod 是为了兼容旧版依赖解析
           bazel build --config=android_arm64 \
+            --noenable_bzlmod \
             --local_ram_resources=HOST_RAM*.6 \
             //runtime/bindings/java:litertlm_android
 
-      - name: 上传 AAR 编译产物
+      - name: 上传 AAR 产物
         uses: actions/upload-artifact@v4
         with:
           name: litert-lm-aar-sangxiaonian
