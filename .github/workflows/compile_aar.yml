@@ -40,23 +40,23 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
           
-          # 1. 运行配置脚本（针对 v0.10.2）
+          # 1. 运行配置脚本
           if [ -f "configure.py" ]; then
             echo -e "y\n\n\n\n\n" | python3 configure.py
           fi
 
-          # 2. 编译 AAR 目标
-          # --noenable_bzlmod 确保使用 WORKSPACE 依赖
-          # --local_ram_resources 限制内存，防止 GitHub Actions 崩溃
+          # 2. 使用你找到的精准路径和目标名
+          # 注意：Bazel 目标名中的中划线是合法的
           bazel build --config=android_arm64 \
             --noenable_bzlmod \
             --local_ram_resources=HOST_RAM*.6 \
-            //java:litertlm_android
+            //kotlin/java/com/google/ai/edge/litertlm:litertlm-android
 
       - name: 上传 AAR 产物
         uses: actions/upload-artifact@v4
         with:
           name: litert-lm-v0.10.2-aar
+          # 递归搜索 bazel-bin 下生成的 aar
           path: |
-            bazel-bin/java/litertlm_android.aar
+            bazel-bin/**/*.aar
           if-no-files-found: error
