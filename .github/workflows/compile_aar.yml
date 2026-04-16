@@ -37,35 +37,30 @@ jobs:
 
       - name: 编译 AAR 库
         run: |
-          # 1. 自动校准 NDK 路径
-          # 有时 setup-android 安装的路径名会有微小差异，这里进行动态定位
+          # 1. 自动定位 NDK 路径
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           NDK_PATH=$(find $ANDROID_SDK_ROOT/ndk -maxdepth 1 -name "25.*" | head -n 1)
           export ANDROID_NDK_HOME=$NDK_PATH
           
-          echo "检查 NDK 路径: $ANDROID_NDK_HOME"
-          ls -d $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64 || echo "警告：未发现工具链目录"
-
           # 2. 运行配置脚本
           if [ -f "configure.py" ]; then
             echo -e "y\n\n\n\n\n\n" | python3 configure.py
           fi
 
           # 3. 执行编译
-          # 使用 --repo_env 将 NDK 路径注入到仓库规则中
-          # 使用 --local_ram_resources 防止 GitHub 服务器内存溢出
+          # 关键点：在目标名后增加 .aar 后缀，确保 Bazel 触发打包动作
           bazel build --config=android_arm64 \
             --noenable_bzlmod \
             --repo_env=ANDROID_NDK_HOME=$ANDROID_NDK_HOME \
             --local_ram_resources=HOST_RAM*.6 \
             --local_cpu_resources=2 \
-            //kotlin/java/com/google/ai/edge/litertlm:litertlm-android
+            //kotlin/java/com/google/ai/edge/litertlm:litertlm-android.aar
 
       - name: 上传 AAR 产物
         uses: actions/upload-artifact@v4
         with:
           name: litert-lm-v0.10.2-aar
-          # 自动搜索生成的 aar 文件
+          # 使用全量深度搜索模式，寻找 bazel-out 下的所有 aar
           path: |
-            bazel-bin/**/*.aar
+            **/bazel-out/**/*.aar
           if-no-files-found: error
