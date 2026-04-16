@@ -1,53 +1,53 @@
-name: 编译 sangxiaonian LiteRT-LM AAR
+name: Build LiteRT-LM Android Binary
 
 on:
-  workflow_dispatch: 
+  push:
+    tags:
+      - 'v0.10.2' # 仅在推送此 tag 时触发
+  workflow_dispatch: # 支持手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
 
     steps:
-      - name: 检出源码
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          ref: 'v0.10.2'
+          ref: v0.10.2 # 强制检出 v0.10.2 源码
 
-      - name: 安装 Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 安装 Bazelisk
-        run: |
-          sudo npm install -g @bazel/bazelisk
-          export USE_BAZEL_VERSION=7.6.1
-
-      - name: 准备 Android SDK & NDK
+      - name: Set up Android SDK & NDK
         uses: android-actions/setup-android@v3
         with:
-          ndk-version: '25.1.8937393' 
+          api-level: 34
+          build-tools: 34.0.0
+          ndk-version: 26.1.10909125 # 建议与 WORKSPACE 中的 NDK 版本保持一致
 
-      - name: 直接执行编译
+      - name: Install Bazel
+        uses: bazel-contrib/setup-bazel@0.6.1
+        with:
+          bazelisk-version: 'latest'
+
+      - name: Configure Bazel
         run: |
-          # 注入环境变量，Bazel 会自动读取这些变量来配置 Android 工具链
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
-          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.1.8937393
+          # 自动配置 WORKSPACE 中的 Android 路径
+          ./configure --android_sdk_path=$ANDROID_HOME --android_ndk_path=$ANDROID_NDK_HOME
 
-          # 在 v0.10.2 中，Bazel 会自动识别环境，无需运行 configure.py
-          # 我们直接尝试编译 AAR
-          # 注意：--noenable_bzlmod 是为了兼容旧版依赖解析
-          bazel build --config=android_arm64 \
-            --noenable_bzlmod \
-            --local_ram_resources=HOST_RAM*.6 \
-            //runtime/bindings/java:litertlm_android
+      - name: Build Binary with Bazel
+        run: |
+          # 编译目标已替换为 //runtime/engine:litert_lm_main
+          # 针对 Android ARM64 架构进行优化编译
+          bazel build -c opt --config=android_arm64 //runtime/engine:litert_lm_main
 
-      - name: 上传 AAR 产物
+      - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: litert-lm-aar-sangxiaonian
-          path: |
-            bazel-bin/runtime/bindings/java/*.aar
-          if-no-files-found: error
+          name: litert-lm-binary
+          # 编译产物通常位于 bazel-bin 下对应的路径中
+          path: bazel-bin/runtime/engine/litert_lm_main
