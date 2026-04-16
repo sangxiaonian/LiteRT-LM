@@ -26,7 +26,6 @@ jobs:
 
       - name: Install Bazel
         run: |
-          # 加上 sudo 解决权限问题
           sudo npm install -g @bazel/bazelisk
 
       - name: Setup Android SDK & NDK
@@ -34,19 +33,30 @@ jobs:
         with:
           ndk-version: '25.2.9519653' 
 
-      - name: Configure and Build
+      - name: Build AAR
         run: |
-          # 自动配置
-          echo -e "y\n\n\n\n\n\n" | python3 configure.py
+          # 1. 自动设置 Android NDK/SDK 路径供 Bazel 使用
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
           
-          # 执行编译
+          # 2. 如果存在 configure 脚本则运行，不存在则跳过
+          if [ -f "configure" ]; then
+            chmod +x configure
+            echo -e "y\n\n\n\n\n" | ./configure
+          elif [ -f "configure.py" ]; then
+            echo -e "y\n\n\n\n\n" | python3 configure.py
+          fi
+
+          # 3. 执行编译
+          # 我们尝试编译 runtime 目录下的 java 绑定
+          # 如果这里报错，请查看 Action 日志中的文件列表寻找正确路径
           bazel build --config=android_arm64 //runtime/bindings/java:litertlm_android
 
-      - name: Upload AAR Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: litert-lm-android-aar
+          # 自动搜索所有生成的 .aar 文件
           path: |
-            bazel-bin/runtime/bindings/java/*.aar
-            bazel-bin/java/*.aar
-          if-no-files-found: warn
+            bazel-bin/**/*.aar
+          if-no-files-found: error
