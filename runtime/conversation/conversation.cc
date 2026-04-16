@@ -453,7 +453,8 @@ absl::Status Conversation::SendMessageAsync(
   if (config_.filter_channel_content_from_kv_cache() &&
       IsUserMessage(message) && !is_appending_message_) {
     if (channel_content_since_last_user_message_) {
-      ASSIGN_OR_RETURN(refill_session_inputs, RewindAndGetInputDataVector());
+      ASSIGN_OR_RETURN(refill_session_inputs,
+                       RewindAndGetInputDataVector(optional_args));
       channel_content_since_last_user_message_ = false;
     }
 
